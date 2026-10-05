@@ -1,0 +1,19 @@
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+
+embedding:
+  model: sentence-transformers/all-MiniLM-L6-v2
+  batch_size: 256
+
+users:
+  min_history: 10
+
+sim:
+  alpha: 0.5           # personalization weight (Stage 1)
+  lambda: 0.2          # diversity weight (Stage 2, MMR)
+  T: 25                # rounds per user
+  K: 10                # slate size
+  candidate_pool: 100  # Stage 1 keeps this many before MMR
+  beta: 0.2            # profile update rate
+  seed: 42
