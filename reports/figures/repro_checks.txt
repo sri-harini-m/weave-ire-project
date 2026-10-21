@@ -1,0 +1,9 @@
+PASS  1. Without recommendation, consumption is more local (rho>0)
+PASS  2. That gap grows with rho
+PASS  3. At rho=0 regimes barely differ in locality (max rel diff 0.01)
+PASS  4. Locality gap grows with risk aversion
+PASS  5. Diversity lowest without recommendation (rho>=0.3)
+PASS  6. Homogeneity highest under recommendation
+PASS  7. Homogeneity under recommendation rises with beta
+PASS  8. Welfare without recommendation rises with rho (gamma=0)
+PASS  9. Welfare gain from recommendation shrinks as rho rises (gamma=0)
