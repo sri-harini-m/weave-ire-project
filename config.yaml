@@ -1,19 +1,52 @@
+# Central config. Every script reads from here, so nobody hard-codes values.
+
 paths:
-  raw_dir: data/raw
-  processed_dir: data/processed
+  raw_dir: data/raw              # unzipped MIND files go here (train/, dev/)
+  processed_dir: data/processed  # outputs of src/data/prepare.py
 
 embedding:
-  model: sentence-transformers/all-MiniLM-L6-v2
+  model: sentence-transformers/all-MiniLM-L6-v2   # 384-dim, fast on CPU
   batch_size: 256
 
 users:
-  min_history: 10
+  min_history: 10   # only keep users with at least this many past clicks
 
-sim:
-  alpha: 0.5           # personalization weight (Stage 1)
-  lambda: 0.2          # diversity weight (Stage 2, MMR)
-  T: 25                # rounds per user
-  K: 10                # slate size
-  candidate_pool: 100  # Stage 1 keeps this many before MMR
-  beta: 0.2            # profile update rate
+# ---- Step 1: reproduce Aridor et al. on the circle --------------------------
+aridor:
+  N: 200          # items on the circle (paper)
+  T: 20           # items consumed per user (paper)
+  U: 100          # users per population (paper)
+  n_pop: 20       # populations per setting (paper: 100; 20 is enough for trends)
+  sigma_bar: 1.0  # spread of prior means (NOT given in the paper; our choice)
   seed: 42
+  reduced_grid:   # ~10 min on 1 core
+    rho: [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]
+    gamma: [0.0, 0.3, 1.0, 5.0]
+    beta: [0.0, 1.0, 5.0]
+    sigma: [1.0]
+  full_grid:      # exactly the paper's grid (hours; use --workers)
+    rho: [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]
+    gamma: [0.0, 0.3, 0.6, 1.0, 5.0]
+    beta: [0.0, 0.4, 0.8, 1.0, 2.0, 5.0]
+    sigma: [0.25, 0.5, 1.0, 2.0, 4.0]
+
+# ---- Step 2+: the same model on MIND news ----------------------------------
+news:
+  N: 500             # articles in the simulated catalogue
+  pca_dims: 8        # embedding dims used for distances (see src/sim/world.py)
+  only_clicked: true # sample articles that received >=1 click in MIND
+  U: 100             # real MIND users per population
+  n_pop: 20
+  T: 20
+  seed: 42
+  base:              # fixed model parameters
+    sigma: 1.0
+    sigma_bar: 1.0
+    beta: 1.0
+    gamma: 1.0
+    fatigue_decay: 0.8
+    fatigue_rho: 0.8
+  grid:              # what we vary
+    rho: [0.0, 0.5, 0.9]
+    phi: [0.0, 0.5, 1.0]
+    info: [none, rec, oracle]

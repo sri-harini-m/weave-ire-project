@@ -1,0 +1,84 @@
+"""Metrics computed from one population run.
+
+Paper metrics (Aridor et al.):
+  local_distance   average distance between consecutively consumed items.
+                   Small = the user stays in one neighbourhood (filter bubble).
+  diversity        average pairwise distance among all items a user consumed.
+  welfare          average true value x of consumed items.
+  homogeneity      average Jaccard overlap of consumption sets between pairs
+                   of users. High = everyone consumes the same things
+                   (echo chamber / homogenisation).
+
+Our additions:
+  welfare_net      average value after fatigue (what the user actually got)
+  fatigue          average fatigue penalty paid per item
+  rounds           how many rounds before the user left (= T if they stayed)
+  cat_entropy      (news) entropy of the categories consumed, normalised to [0,1]
+  n_categories     (news) number of distinct categories consumed
+
+Distances are normalised to [0, 1] (circle: d / N, exactly as in the paper's
+diversity formula; news: embedding distance / max distance).
+"""
+import numpy as np
+import pandas as pd
+
+from .world import World
+
+
+def user_metrics(world: World, run: dict) -> pd.DataFrame:
+    seq, val, pen, D = run["seq"], run["val"], run["pen"], world.D
+    rows = []
+    n_cats = len(set(world.cats)) if world.cats is not None else None
+    for i in range(seq.shape[0]):
+        items = seq[i][seq[i] >= 0]
+        m = len(items)
+        r = {"user": i, "rounds": int(run["left_at"][i]), "n_consumed": m}
+        if m >= 2:
+            r["local_distance"] = float(D[items[:-1], items[1:]].mean())
+            sub = D[np.ix_(items, items)]
+            r["diversity"] = float(sub.sum() / (m * (m - 1)))
+        else:
+            r["local_distance"] = r["diversity"] = np.nan
+        v, p = val[i][seq[i] >= 0], pen[i][seq[i] >= 0]
+        r["welfare"] = float(v.mean()) if m else np.nan
+        r["welfare_net"] = float((v - p).mean()) if m else np.nan
+        r["fatigue"] = float(p.mean()) if m else np.nan
+        if world.cats is not None and m:
+            _, counts = np.unique(world.cats[items], return_counts=True)
+            q = counts / counts.sum()
+            h = -(q * np.log(q)).sum()
+            r["cat_entropy"] = float(h / np.log(n_cats)) if n_cats > 1 else 0.0
+            r["n_categories"] = int(len(counts))
+        rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def homogeneity(run: dict) -> float:
+    """Mean pairwise Jaccard index between users' consumption sets."""
+    seq = run["seq"]
+    U = seq.shape[0]
+    N = max(int(seq.max()) + 1, 1)
+    M = np.zeros((U, N), bool)
+    r, c = np.nonzero(seq >= 0)
+    M[r, seq[r, c]] = True
+    M = M.astype(float)
+    inter = M @ M.T
+    size = M.sum(1)
+    union = size[:, None] + size[None, :] - inter
+    J = np.divide(inter, union, out=np.zeros_like(inter), where=union > 0)
+    off = ~np.eye(U, dtype=bool)
+    return float(J[off].mean())
+
+
+def time_curves(world: World, run: dict) -> pd.DataFrame:
+    """Per-round averages, to see narrowing / fatigue build up over time."""
+    seq, pen = run["seq"], run["pen"]
+    T = seq.shape[1]
+    out = []
+    for t in range(1, T):
+        ok = (seq[:, t] >= 0) & (seq[:, t - 1] >= 0)
+        d = world.D[seq[ok, t - 1], seq[ok, t]].mean() if ok.any() else np.nan
+        out.append({"t": t, "step_distance": float(d),
+                    "fatigue": float(np.nanmean(pen[:, t])) if (seq[:, t] >= 0).any() else np.nan,
+                    "active_share": float((seq[:, t] >= 0).mean())})
+    return pd.DataFrame(out)
