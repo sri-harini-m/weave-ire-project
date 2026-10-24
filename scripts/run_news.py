@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.data.store import MindStore
 from src.sim.experiment import run_grid, summarise
 from src.sim.news_users import attach_user_pool, sample_news_users
 from src.sim.recommenders import REGISTRY
+from src.sim.run_bundle import RunBundle
 from src.sim.world import describe, news_world
 
 METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
@@ -23,6 +23,7 @@ METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
 def build_world(store, cfg, rho):
     w = news_world(store, N=cfg["N"], rho=rho, pca_dims=cfg["pca_dims"],
                    only_clicked=cfg["only_clicked"], seed=cfg["seed"])
+    w.article_metadata = store.articles.set_index("news_id", drop=False).loc[w.ids].to_dict("records")
     return attach_user_pool(w, store, seed=cfg["seed"])
 
 
@@ -60,6 +61,7 @@ def plot(s, curves, path, group):
             a.set_xlabel("round"); a.grid(alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=130)
+    plt.close(fig)
 
 
 def main():
@@ -67,22 +69,50 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--n-pop", type=int, default=None)
-    ap.add_argument("--recommenders", nargs="*", default=None,
+    ap.add_argument("--recommenders", nargs="*", default=None, choices=list(REGISTRY),
                     help=f"slate recommenders to compare: {list(REGISTRY)}")
+    weights = ap.add_mutually_exclusive_group()
+    weights.add_argument("--mmr-diversity-weight", type=float, default=None,
+                    help="MMR redundancy penalty in [0, 1]; zero equals content-based")
+    weights.add_argument("--mmr-diversity-weights", type=float, nargs="+", default=None,
+                        help="Save a comparison of several MMR penalty settings")
     ap.add_argument("--out", default="results/news")
     args = ap.parse_args()
 
-    full = yaml.safe_load(open(args.config))
+    full = yaml.safe_load(Path(args.config).read_text())
+    with RunBundle(args.out, full, vars(args), "mind") as bundle:
+        print("Saving complete MIND run to:", bundle.path)
+        execute_news(args, full, bundle.path)
+    print("Saved run:", bundle.path)
+
+
+def execute_news(args, full, out):
+
+    from src.data.store import MindStore
+
     cfg = full["news"]
     store = MindStore(args.config)
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
 
     grid = dict(cfg["grid"])
     recs, group = None, "info"
     if args.recommenders:
-        K = full.get("recommenders", {}).get("K", 10)
-        recs = {r: partial(REGISTRY[r], K=K) for r in args.recommenders}
+        settings = full.get("recommenders", {})
+        recs = {}
+        for r in args.recommenders:
+            options = {"K": settings.get("K", 10)}
+            if r in ("popularity", "content", "mmr"):
+                options["prior_weight"] = settings.get("prior_weight", 1.0)
+            if r in ("content", "mmr"):
+                options["profile_weight"] = settings.get("profile_weight", 1.0)
+            if r == "mmr":
+                options["diversity_weight"] = args.mmr_diversity_weight \
+                    if args.mmr_diversity_weight is not None \
+                    else settings.get("diversity_weight", 0.3)
+                if args.mmr_diversity_weights is not None:
+                    for weight in args.mmr_diversity_weights:
+                        recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
+                    continue
+            recs[r] = partial(REGISTRY[r], **options)
         grid["info"] = ["none"]
         group = "recommender"
 
@@ -96,13 +126,15 @@ def main():
                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
                           seed=cfg["seed"], recommenders=recs,
                           users_fn=partial(sample_news_users, U=cfg["U"]),
-                          workers=args.workers, keep_curves=True)
-    df.to_csv(out / "populations.csv", index=False)
-    curves.to_csv(out / "curves.csv", index=False)
+                          workers=args.workers, keep_curves=True, archive_dir=out)
+    df.to_csv(out / "original_populations.csv", index=False)
+    curves.to_csv(out / "original_curves.csv", index=False)
     by = [k for k in grid if k != "info"] + ["info", "recommender"]
     s = summarise(df, by, METRICS)
-    s.to_csv(out / "summary.csv", index=False)
-    plot(s, curves, out / "figures.png", group)
+    s.to_csv(out / "original_summary.csv", index=False)
+    plot(s, curves, out / "original_figures.png", group)
+    from src.sim.reporting import rebuild_report
+    rebuild_report(out)
     print(s.groupby(group)[["cat_entropy", "homogeneity", "welfare_net", "fatigue"]]
           .mean().round(3))
     print("Saved to", out)

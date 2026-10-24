@@ -1,5 +1,10 @@
 # Weave: filter bubbles and fatigue in news recommendation
 
+Person B's recommender input contract, defaults, and checks are in
+[docs/recommenders.md](docs/recommenders.md).
+Saved report artifacts and offline rebuild commands are in
+[docs/report_artifacts.md](docs/report_artifacts.md).
+
 Agent-based simulation (Aridor, Goncalves & Sikdar, "Deconstructing the Filter
 Bubble") extended to news (MIND-small) with user fatigue, used to evaluate
 filter bubbles, echo chambers and fatigue under different recommenders.
