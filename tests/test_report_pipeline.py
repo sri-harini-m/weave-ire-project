@@ -191,7 +191,7 @@ def test_news_runner_archives_real_input_contract_with_stub_store(tmp_path, monk
                         "only_clicked": True, "seed": 5, "base": {},
                         "grid": {"rho": [.5], "phi": [0.], "info": ["none"]}},
               "recommenders": {"K": 2}}
-    args = Namespace(config="unused-fixture", recommenders=["none", "popularity", "content", "mmr"],
+    args = Namespace(config="unused-fixture", recommenders=["none", "popularity", "content", "mmr", "bm25", "mf"],
                      mmr_diversity_weight=None, mmr_diversity_weights=[0., .3],
                      workers=1, n_pop=2)
     execute_news(args, config, tmp_path)
@@ -202,5 +202,5 @@ def test_news_runner_archives_real_input_contract_with_stub_store(tmp_path, monk
     articles = json.loads((tmp_path / "populations" / "job_000000" / "article_metadata.json").read_text())
     assert len(articles) == 6 and articles[0]["title"].startswith("fixture")
     summary = pd.read_csv(tmp_path / "report" / "summary.csv")
-    assert set(summary["recommender"]) == {"none", "popularity", "content", "mmr_0", "mmr_0.3"}
+    assert set(summary["recommender"]) == {"none", "popularity", "content", "mmr_0", "mmr_0.3", "bm25", "mf"}
     assert (summary["n_populations"] == 2).all()

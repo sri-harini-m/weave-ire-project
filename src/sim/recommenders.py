@@ -11,6 +11,10 @@ To add a recommender, subclass Recommender and implement `recommend`
 allowed to see is in SimState: it never sees users' true values.
 """
 from dataclasses import dataclass, field
+from collections import Counter
+import inspect
+from numbers import Real
+import re
 
 import numpy as np
 
@@ -50,6 +54,19 @@ class Recommender:
         """Called after each round with what users consumed and the feedback
         (realised utility). Learning recommenders update themselves here."""
         pass
+
+    def get_config(self) -> dict:
+        """Return the explicit constructor settings of a registered algorithm."""
+        return {name: getattr(self, name) for name in
+                inspect.signature(type(self).__init__).parameters if name != "self"}
+
+    def model_state(self) -> dict:
+        """Return learned arrays; static catalogue data stays in the world."""
+        return {}
+
+    def restore_model_state(self, values: dict):
+        if values:
+            raise ValueError("This recommender has no learned model arrays")
 
     # helper for subclasses: top-K available items from a score matrix
     def top_k(self, scores: np.ndarray, available: np.ndarray) -> np.ndarray:
@@ -120,6 +137,17 @@ class PopularityRecommender(Recommender):
 
     def observe(self, state, users, items, feedback):
         np.add.at(self.counts, items, 1.0)
+
+    def model_state(self):
+        return {"counts": self.counts.copy()}
+
+    def restore_model_state(self, values):
+        if set(values) != {"counts"}:
+            raise ValueError("Popularity state requires only counts")
+        counts = np.asarray(values["counts"], dtype=float)
+        if counts.shape != (self.world.N,) or not np.isfinite(counts).all() or (counts < 0).any():
+            raise ValueError("Invalid learned counts in model state")
+        self.counts = counts.copy()
 
 
 def _unit_rows(vectors):
@@ -230,6 +258,243 @@ class MMRRecommender(ContentBasedRecommender):
         return out
 
 
+class BM25Recommender(PopularityRecommender):
+    """Lexical article matching from visible text and simulated reading history.
+
+    The query is the set of unique lowercase alphanumeric tokens in optional
+    `extra['query_texts'][u]` and titles/abstracts of simulated reads. BM25 uses
+    positive Lucene-style IDF. Empty or out-of-vocabulary queries use popularity.
+    No stemming, stopword removal, category expansion, or hidden preferences are
+    used. Catalogue text is matched by news_id, not metadata row order.
+    """
+    name = "bm25"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0,
+                 k1: float = 1.2, b: float = 0.75):
+        super().__init__(K, prior_weight)
+        for name, value in (("k1", k1), ("b", b)):
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real) \
+                    or not np.isfinite(value):
+                raise ValueError(f"{name} must be a finite number")
+        if k1 <= 0 or not 0 <= b <= 1:
+            raise ValueError("k1 must be positive and b must be in [0, 1]")
+        self.k1, self.b = k1, b
+
+    @staticmethod
+    def tokenize(text):
+        return re.findall(r"[^\W_]+", text.lower(), flags=re.UNICODE)
+
+    @staticmethod
+    def _text(value):
+        if value is None or isinstance(value, (float, np.floating)) and np.isnan(value):
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("Article title and abstract must be strings or missing")
+        return value
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        metadata = getattr(world, "article_metadata", None)
+        if world.N == 0 and metadata is None:
+            metadata = []
+        if not isinstance(metadata, (list, tuple)):
+            raise ValueError("BM25 requires article_metadata with news_id, title and/or abstract")
+        ids = [] if world.N == 0 and world.ids is None else np.asarray(world.ids)
+        if np.shape(ids) != (world.N,):
+            raise ValueError("BM25 requires world.ids with shape [N]")
+        ids = [str(value) for value in ids]
+        if len(ids) != len(set(ids)):
+            raise ValueError("BM25 catalogue article IDs must be unique")
+        by_id = {}
+        for record in metadata:
+            if not isinstance(record, dict) or "news_id" not in record:
+                raise ValueError("Each BM25 article record must contain news_id")
+            key = str(record["news_id"])
+            if key in by_id:
+                raise ValueError("BM25 article_metadata contains duplicate news_id values")
+            by_id[key] = record
+        if any(key not in by_id for key in ids):
+            raise ValueError("BM25 article_metadata is missing catalogue article IDs")
+        self.document_tokens = []
+        for key in ids:
+            record = by_id[key]
+            text = self._text(record.get("title")) + " " + self._text(record.get("abstract"))
+            self.document_tokens.append(tuple(self.tokenize(text)))
+        lengths = np.asarray([len(tokens) for tokens in self.document_tokens], dtype=float)
+        if world.N and not lengths.any():
+            raise ValueError("BM25 requires at least one nonempty article title or abstract")
+        self.average_length = float(lengths.mean()) if world.N else 0.0
+        frequencies = [Counter(tokens) for tokens in self.document_tokens]
+        df = Counter(term for terms in frequencies for term in terms)
+        postings = {}
+        for item, terms in enumerate(frequencies):
+            norm = self.k1 * (1 - self.b + self.b * lengths[item] / self.average_length)
+            for term, tf in terms.items():
+                idf = np.log1p((world.N - df[term] + .5) / (df[term] + .5))
+                postings.setdefault(term, []).append((item, idf * tf * (self.k1 + 1) / (tf + norm)))
+        self.postings = {term: (np.array([item for item, _ in values], dtype=int),
+                                np.array([weight for _, weight in values]))
+                         for term, values in postings.items()}
+
+    def relevance(self, state):
+        if len(state.history) != self.U:
+            raise ValueError("history must contain one list per user")
+        query_texts = state.extra.get("query_texts")
+        if query_texts is None:
+            query_texts = [""] * self.U
+        if not isinstance(query_texts, (list, tuple, np.ndarray)) \
+                or np.ndim(query_texts) != 1 or len(query_texts) != self.U \
+                or any(not isinstance(text, str) for text in query_texts):
+            raise ValueError("extra['query_texts'] must contain one string per user")
+        scores = np.zeros((self.U, self.world.N))
+        fallback = self.counts / self.counts.max() if self.counts.size \
+            and self.counts.max() > 0 else self.counts
+        for u, history in enumerate(state.history):
+            query = set(self.tokenize(query_texts[u]))
+            if len(history):
+                idx = np.asarray(history)
+                if idx.ndim != 1 or not np.issubdtype(idx.dtype, np.integer) \
+                        or (idx < 0).any() or (idx >= self.world.N).any():
+                    raise ValueError("history must contain catalogue indices in [0, N)")
+                for item in idx:
+                    query.update(self.document_tokens[item])
+            matched = False
+            # Sorted query terms also make floating-point accumulation repeatable.
+            for term in sorted(query):
+                if term in self.postings:
+                    items, weights = self.postings[term]
+                    scores[u, items] += weights
+                    matched = True
+            if not matched:
+                scores[u] = fallback
+        return scores
+
+    def recommend(self, state):
+        available = self.eligible(state)
+        return self.top_k(self.relevance(state), available)
+
+
+class MatrixFactorizationRecommender(PopularityRecommender):
+    """Biased explicit-feedback matrix factorization with regularized ALS.
+
+    Every observed utility, including zero and negative values, is a target.
+    Missing entries are never targets. Each feedback batch warm-starts an ALS
+    refit over all stored observations. Repeated pairs retain their latest target,
+    while popularity counts every read event. Cold users use popularity; items
+    without feedback use the fitted global/user baseline instead of latent noise.
+    """
+    name = "mf"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
+                 regularization: float = 1.0, iterations: int = 3):
+        super().__init__(K, prior_weight)
+        for name, value in (("factors", factors), ("iterations", iterations)):
+            if isinstance(value, (bool, np.bool_)) \
+                    or not isinstance(value, (int, np.integer)) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if isinstance(regularization, (bool, np.bool_)) \
+                or not isinstance(regularization, Real) \
+                or not np.isfinite(regularization) or regularization <= 0:
+            raise ValueError("regularization must be finite and positive")
+        self.factors, self.regularization, self.iterations = factors, regularization, iterations
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self.observed_ratings = np.full((U, world.N), np.nan)
+        self.user_factors = rng.normal(0, .1, (U, self.factors))
+        self.item_factors = rng.normal(0, .1, (world.N, self.factors))
+        self.user_bias = np.zeros(U)
+        self.item_bias = np.zeros(world.N)
+        self.global_mean = 0.0
+
+    def predictions(self):
+        return self.global_mean + self.user_bias[:, None] + self.item_bias[None, :] \
+            + self.user_factors @ self.item_factors.T
+
+    def recommend(self, state):
+        available = self.eligible(state)
+        observed = np.isfinite(self.observed_ratings)
+        scores = self.predictions()
+        unknown_items = ~observed.any(axis=0)
+        scores[:, unknown_items] = self.global_mean + self.user_bias[:, None]
+        scores[~observed.any(axis=1)] = self.counts
+        return self.top_k(scores, available)
+
+    def observe(self, state, users, items, feedback):
+        users, items = np.asarray(users), np.asarray(items)
+        try:
+            feedback = np.asarray(feedback, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError("feedback must contain finite numeric utilities") from error
+        if users.ndim != 1 or items.ndim != 1 or feedback.ndim != 1 \
+                or users.shape != items.shape or users.shape != feedback.shape:
+            raise ValueError("users, items and feedback must be aligned one-dimensional arrays")
+        if not np.isfinite(feedback).all():
+            raise ValueError("feedback must contain finite numeric utilities")
+        if not users.size:
+            return
+        if not np.issubdtype(users.dtype, np.integer) \
+                or not np.issubdtype(items.dtype, np.integer) \
+                or (users < 0).any() or (users >= self.U).any() \
+                or (items < 0).any() or (items >= self.world.N).any():
+            raise ValueError("feedback users/items must be valid integer indices")
+        # All input validation precedes changes to either observations or counts.
+        for user, item, rating in zip(users, items, feedback):
+            self.observed_ratings[user, item] = rating
+        np.add.at(self.counts, items, 1.0)
+        self._fit()
+
+    def _fit(self):
+        observed = np.isfinite(self.observed_ratings)
+        values = self.observed_ratings[observed]
+        self.global_mean = float(values.mean())
+        known_items = observed.any(axis=0)
+        # Uniform early feedback can drive every fitted factor to zero. A seeded
+        # restart avoids trapping all later ALS updates at that stationary point.
+        if not np.any(self.item_factors[known_items]):
+            self.item_factors[known_items] = self.rng.normal(0, .1, (known_items.sum(), self.factors))
+        ridge = self.regularization * np.eye(self.factors + 1)
+        for _ in range(self.iterations):
+            for user in np.flatnonzero(observed.any(axis=1)):
+                idx = np.flatnonzero(observed[user])
+                design = np.column_stack((np.ones(len(idx)), self.item_factors[idx]))
+                target = self.observed_ratings[user, idx] - self.global_mean - self.item_bias[idx]
+                fitted = np.linalg.solve(design.T @ design + ridge, design.T @ target)
+                self.user_bias[user], self.user_factors[user] = fitted[0], fitted[1:]
+            for item in np.flatnonzero(known_items):
+                idx = np.flatnonzero(observed[:, item])
+                design = np.column_stack((np.ones(len(idx)), self.user_factors[idx]))
+                target = self.observed_ratings[idx, item] - self.global_mean - self.user_bias[idx]
+                fitted = np.linalg.solve(design.T @ design + ridge, design.T @ target)
+                self.item_bias[item], self.item_factors[item] = fitted[0], fitted[1:]
+
+    def model_state(self):
+        values = super().model_state()
+        values.update({name: np.array(getattr(self, name), copy=True) for name in
+                       ("observed_ratings", "user_factors", "item_factors",
+                        "user_bias", "item_bias", "global_mean")})
+        return values
+
+    def restore_model_state(self, values):
+        shapes = {"counts": (self.world.N,), "observed_ratings": (self.U, self.world.N),
+                  "user_factors": (self.U, self.factors),
+                  "item_factors": (self.world.N, self.factors),
+                  "user_bias": (self.U,), "item_bias": (self.world.N,), "global_mean": ()}
+        if set(values) != set(shapes):
+            raise ValueError("MF state must contain every learned model array")
+        restored = {}
+        for name, shape in shapes.items():
+            array = np.asarray(values[name], dtype=float)
+            finite = not np.isinf(array).any() if name == "observed_ratings" \
+                else np.isfinite(array).all()
+            if array.shape != shape or not finite or name == "counts" and (array < 0).any():
+                raise ValueError(f"Invalid {name} in MF model state")
+            restored[name] = array.copy()
+        for name, array in restored.items():
+            setattr(self, name, float(array) if name == "global_mean" else array)
+
+
 REGISTRY = {"none": NoRecommender, "random": RandomRecommender,
             "popularity": PopularityRecommender, "content": ContentBasedRecommender,
-            "mmr": MMRRecommender}
+            "mmr": MMRRecommender, "bm25": BM25Recommender,
+            "mf": MatrixFactorizationRecommender}

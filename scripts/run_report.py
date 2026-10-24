@@ -34,8 +34,13 @@ def synthetic_world(rho, N=60, dimensions=16, seed=42, pool_size=100):
     profiles /= np.linalg.norm(profiles, axis=1, keepdims=True)
     world.user_pool = {"ids": np.array([f"synthetic_reader_{i}" for i in range(pool_size)]),
                        "profiles": profiles, "seen": np.zeros((pool_size, N), dtype=bool)}
+    topics = ("sports", "politics", "technology", "business", "health", "science")
     world.article_metadata = [{"news_id": str(world.ids[i]), "category": int(world.cats[i]),
-                               "title": f"Synthetic article {i}"} for i in range(N)]
+                               "title": f"{topics[world.cats[i]]} news update {i}",
+                               "abstract": f"Synthetic report about {topics[world.cats[i]]}"}
+                              for i in range(N)]
+    world.user_pool["query_texts"] = [topics[int(np.argmax(p[:min(6, dimensions)]))]
+                                      for p in profiles]
     return world
 
 
@@ -54,6 +59,8 @@ def main():
     ap.add_argument("--rho", type=float, nargs="+", default=[0.5])
     ap.add_argument("--fatigue", type=float, nargs="+", default=[0., 0.5])
     ap.add_argument("--mmr-weights", type=float, nargs="+", default=[0., 0.3, 0.6])
+    ap.add_argument("--recommenders", nargs="+", choices=list(REGISTRY),
+                    default=["none", "random", "popularity", "content", "bm25", "mf", "mmr"])
     args = ap.parse_args()
     if args.rebuild is not None:
         from src.sim.reporting import rebuild_report
@@ -74,9 +81,10 @@ def main():
     config = {"data_kind": "synthetic", "settings": vars(args).copy(),
               "grid": {"rho": args.rho, "phi": args.fatigue, "info": ["none"]}}
     recs = {name: partial(REGISTRY[name], K=args.k)
-            for name in ("none", "random", "popularity", "content")}
-    for weight in args.mmr_weights:
-        recs[f"mmr_{weight:g}"] = partial(REGISTRY["mmr"], K=args.k, diversity_weight=weight)
+            for name in args.recommenders if name != "mmr"}
+    if "mmr" in args.recommenders:
+        for weight in args.mmr_weights:
+            recs[f"mmr_{weight:g}"] = partial(REGISTRY["mmr"], K=args.k, diversity_weight=weight)
     with RunBundle(args.out, config, vars(args), "synthetic") as bundle:
         print("SYNTHETIC ENGINEERING CHECK: not MIND research findings")
         print("Saving complete run to:", bundle.path)

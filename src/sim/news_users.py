@@ -20,15 +20,23 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0):
     profiles = np.zeros((len(uids), store.embeddings.shape[1]), np.float32)
     seen = np.zeros((len(uids), world.N), bool)
     histories = []
+    query_texts = []
+    article_records = store.articles.set_index("news_id").to_dict("index")
     for k, u in enumerate(uids):
         hist = store.history(u)
         histories.append(list(hist))
+        text = []
+        for news_id in hist:
+            article = article_records.get(news_id, {})
+            text.extend(article[key] for key in ("title", "abstract")
+                        if isinstance(article.get(key), str))
+        query_texts.append(" ".join(text))
         profiles[k] = store.embeddings[[store.index[n] for n in hist]].mean(0)
         for n in hist:
             if n in pos:
                 seen[k, pos[n]] = True
     world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen,
-                       "histories": histories}
+                       "histories": histories, "query_texts": query_texts}
     return world
 
 
@@ -39,4 +47,6 @@ def sample_news_users(world, rng, U: int):
     world.sampled_user_ids = pool["ids"][idx].tolist()
     world.sampled_histories = [pool["histories"][i] for i in idx] \
         if "histories" in pool else None
+    world.sampled_query_texts = [pool["query_texts"][i] for i in idx] \
+        if "query_texts" in pool else None
     return pool["profiles"][idx], pool["seen"][idx]

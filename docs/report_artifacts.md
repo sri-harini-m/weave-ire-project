@@ -8,6 +8,8 @@ The current algorithms are classical NumPy recommenders. Their saved models
 contain settings, learned popularity counts, catalogue fingerprints, and exact
 random-generator states. Content embeddings are saved once in each population's
 world archive. MMR similarity is rebuilt from those saved embeddings on reload.
+MF checkpoints also preserve learned factors, biases, and the observed-feedback
+matrix. BM25 checkpoints validate the archived article text and rebuild its index.
 There are no LLM calls or LLM responses in this implementation.
 
 ## What each run saves
@@ -111,7 +113,7 @@ python scripts/run_report.py --out results/report_checks
 ```
 
 The default check uses 12 readers, 60 generated articles, eight rounds, three
-populations, two fatigue levels, and three MMR weights. It compares seven
+populations, two fatigue levels, and three MMR weights. It compares nine
 algorithm/settings combinations. These are synthetic engineering checks,
 not MIND findings for the project report. Figures identify synthetic inputs.
 
@@ -126,7 +128,7 @@ The real-data command cannot complete until they are supplied.
 
 ```bash
 python scripts/run_news.py \
-  --recommenders none random popularity content mmr \
+  --recommenders none random popularity content bm25 mf mmr \
   --mmr-diversity-weights 0 0.3 0.6 \
   --n-pop 20 --workers 2 --out results/news
 ```

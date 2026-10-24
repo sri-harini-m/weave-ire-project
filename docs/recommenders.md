@@ -17,11 +17,13 @@ ranking algorithms.
 | `popularity` | Simulated read counts plus an optional initial prior | Every observed read adds one count |
 | `content` | Cosine similarity to a visible profile and simulated reading history | Rebuilds the profile from the current history |
 | `mmr` | Greedy content relevance minus a slate redundancy penalty | Uses the same history and popularity updates as `content` |
+| `bm25` | Keyword relevance to visible query text and simulated reading history | Reuses static article text; updates popularity fallback |
+| `mf` | Predicted observed utility from user/item factors and biases | Refits on accumulated observed feedback after each round |
 
-Matrix factorisation is deferred until the minimum three systems work on real data.
-These algorithms do not receive simulated true utilities or Bayesian beliefs.
-The `ratings` field contains observed feedback only. These three algorithms count
-reads, but do not weight content profiles by feedback values.
+These algorithms do not receive unobserved utilities or Bayesian beliefs.
+The `ratings` field contains observed feedback only. Popularity, content and MMR
+count reads without weighting content profiles by feedback. Matrix factorisation
+fits the observed utility values, including negative and zero values.
 
 ## Array contract
 
@@ -38,6 +40,8 @@ External article IDs map through `world.ids[n]`; slates contain indices, not IDs
 | `state.ratings` | float `[U, N]` | Observed utility; `NaN` for unobserved pairs |
 | `state.active` | bool `[U]` | Whether each reader remains active |
 | `state.extra['profiles']` | finite float `[U, D]`, optional | Visible initial profiles, in the article embedding space |
+| `world.article_metadata` | `N` records with `news_id`, `title`, optional `abstract` | Required BM25 article text; aligned through catalogue IDs |
+| `state.extra['query_texts']` | optional list of `U` strings | Observable initial keyword context for BM25 |
 | `state.t` | integer | Current round |
 | Returned slate | integer `[U, K]` | Distinct eligible article indices; `-1` pads empty positions |
 
@@ -53,7 +57,10 @@ Missing article embeddings raise `ValueError` for content and MMR; there is no
 silent substitution of the simulator's latent correlation matrix.
 
 The simulator now forwards its optional `profiles` argument into `extra`.
-Existing calls without profiles continue to work.
+It also forwards optional `query_texts`. The news-user adapter builds these texts
+from each sampled user's visible MIND history titles and abstracts. It does not
+turn embedding coordinates or hidden preferences into keywords.
+Existing calls without either input continue to work.
 
 ## Lifecycle
 
@@ -131,7 +138,7 @@ project findings.
 Once Person A supplies `src/data/store.py` and processed MIND data:
 
 ```bash
-python scripts/run_news.py --recommenders none random popularity content mmr --n-pop 20
+python scripts/run_news.py --recommenders none random popularity content mmr bm25 mf --n-pop 20
 python scripts/run_news.py --recommenders mmr --mmr-diversity-weight 0 --out results/mmr_0
 python scripts/run_news.py --recommenders mmr --mmr-diversity-weight 0.6 --out results/mmr_06
 ```
@@ -144,3 +151,71 @@ the config, seeds, command, models, traces, metrics, figures and source snapshot
 Person A must confirm observable profiles, history policy, feedback units, and
 article ordering. Current simulated feedback is utility after fatigue. Real-data
 experiments also need the missing data-loading module and processed MIND files.
+
+## Additional comparisons: BM25 and matrix factorisation
+
+BM25 provides a lexical comparison to embedding-based content ranking. It scores
+title-plus-abstract text using term frequency saturation and document length
+normalization. It uses the Lucene positive-IDF convention:
+
+```text
+IDF(term) = log(1 + (N - document_frequency + 0.5) / (document_frequency + 0.5))
+score(document, query) = sum over unique query terms of:
+    IDF(term) * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / mean_length))
+```
+
+Query terms come from optional visible initial query text and articles consumed
+during simulation. Empty or out-of-vocabulary queries use learned popularity.
+Missing or entirely empty article text raises an error. BM25 does not fabricate
+text from categories, IDs, embeddings, or hidden user values. Tokenization is
+deterministic lowercase alphanumeric matching; this is not a linguistic stemmer.
+
+Defaults are `k1=1.2` and `b=0.75`. These are configurable, not tuned MIND results.
+The formula follows [Elastic's BM25 explanation](https://www.elastic.co/blog/practical-bm25-part-2-the-bm25-algorithm-and-its-variables).
+
+Matrix factorisation uses an explicit-feedback model:
+
+```text
+predicted_utility(user, article) = global_mean + user_bias + article_bias
+                                 + user_factors dot article_factors
+```
+
+Regularized alternating least squares fits only observed user–article utilities.
+After each feedback batch it warm-starts from the previous factors and refits all
+observed pairs. Missing feedback is not replaced with zero. Repeated observations
+of a pair replace that pair's training target with the latest feedback, while
+popularity still counts every observed read event.
+
+Cold users use popularity. Items with no observations use a baseline rather than
+random latent-factor predictions. The implementation follows the regularized
+explicit-rating framework in [Koren, Bell and Volinsky (2009)](https://doi.org/10.1109/MC.2009.263).
+Our target is the simulator's observed utility, not a calibrated click probability.
+
+These defaults use eight factors, regularization one, and three ALS iterations
+per feedback batch. Per-algorithm overrides are supported in `config.yaml`:
+
+```yaml
+recommenders:
+  K: 10
+  prior_weight: 1.0
+  bm25:
+    k1: 1.2
+    b: 0.75
+  mf:
+    factors: 8
+    regularization: 1.0
+    iterations: 3
+```
+
+All constructor settings enter population metadata and report condition grouping.
+MF factor arrays, biases, observed feedback, and popularity counts enter safe
+checkpoints. BM25 rebuilds its index from archived article text and validates
+the text fingerprint when loading a saved model.
+
+## Why FAISS is deferred
+
+[FAISS](https://faiss.ai/) provides vector-search indexes and related operations.
+An exact inner-product index over normalized embeddings implements the same
+ranking rule as the existing cosine scorer. Approximate indexes can change the
+retrieved candidates. We have not added either backend as a separate behavioral
+condition. A larger-catalogue performance benchmark should motivate that change.

@@ -30,6 +30,9 @@ def synthetic_inputs(users, articles, dimensions, seed):
                   ids=np.arange(articles), profile_vecs=embeddings,
                   popularity=rng.random(articles),
                   cats=np.arange(articles) % 10, kind="news")
+    world.article_metadata = [{"news_id": int(i), "title": f"topic{i % 10} news update {i}",
+                               "abstract": f"Synthetic topic{i % 10} report"}
+                              for i in range(articles)]
     return world, profiles
 
 
@@ -110,7 +113,7 @@ def main():
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--recommenders", nargs="+", choices=list(REGISTRY),
-                        default=["none", "random", "popularity", "content", "mmr"])
+                        default=list(REGISTRY))
     parser.add_argument("--simulator", action="store_true",
                         help="Also time complete synthetic simulator runs")
     parser.add_argument("--out", type=Path, default=None, help="Optional JSON report path")

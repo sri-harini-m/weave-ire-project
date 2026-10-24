@@ -42,9 +42,7 @@ def _one(job):
     archive = None
     if archive_dir is not None:
         from .artifacts import PopulationArchive
-        settings = {k: getattr(rec, k) for k in
-                    ("K", "prior_weight", "profile_weight", "diversity_weight")
-                    if hasattr(rec, k)}
+        settings = rec.get_config()
         archive = PopulationArchive(Path(archive_dir) / "populations" / f"job_{job_id:06d}",
                                     metadata={"job_id": job_id, "population": pop_id,
                                               "pop": pop_id, "seed": seed, "rho": rho,
@@ -55,7 +53,8 @@ def _one(job):
                                               "initial_histories": getattr(world, "sampled_histories", None),
                                               "recommender_settings": settings})
     try:
-        run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive)
+        run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive,
+                             query_texts=getattr(world, "sampled_query_texts", None))
     except Exception as error:
         if archive is not None:
             archive.fail(error)

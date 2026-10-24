@@ -104,7 +104,8 @@ def save_world(world, path):
     fields = {name: getattr(world, name) for name in WORLD_FIELDS}
     fields["L"] = world.L
     _write_npz(path, fields, {"absent": [k for k, v in fields.items() if v is None],
-                              "digest": world_digest(world)})
+                              "digest": world_digest(world),
+                              "article_metadata": getattr(world, "article_metadata", None)})
 
 
 def load_world(path):
@@ -123,14 +124,15 @@ def load_world(path):
     article_path = path.parent / "article_metadata.json"
     if article_path.exists():
         world.article_metadata = json.loads(article_path.read_text(encoding="utf-8"))
+    elif metadata.get("article_metadata") is not None:
+        world.article_metadata = metadata["article_metadata"]
     return world
 
 
 def _model_settings(rec):
     if rec.name not in REGISTRY or type(rec) is not REGISTRY[rec.name]:
         raise ValueError("Checkpointing supports only registered recommender classes")
-    keys = ("K", "prior_weight", "profile_weight", "diversity_weight")
-    return {key: getattr(rec, key) for key in keys if hasattr(rec, key)}
+    return rec.get_config()
 
 
 def save_checkpoint(rec, path):
@@ -141,7 +143,10 @@ def save_checkpoint(rec, path):
     metadata = {"algorithm": rec.name, "settings": _model_settings(rec),
                 "U": rec.U, "world_digest": world_digest(rec.world),
                 "rng": rec.rng.bit_generator.state}
-    values = {"counts": rec.counts} if hasattr(rec, "counts") else {}
+    if rec.name == "bm25":
+        metadata["article_text_digest"] = hashlib.sha256(
+            _json_text(rec.world.article_metadata).encode()).hexdigest()
+    values = rec.model_state()
     _write_npz(path, values, metadata)
 
 
@@ -150,6 +155,10 @@ def load_checkpoint(path, world):
     values, metadata = _read_npz(path)
     if metadata["world_digest"] != world_digest(world):
         raise ValueError("Checkpoint world does not match the supplied catalogue")
+    if "article_text_digest" in metadata:
+        text_digest = hashlib.sha256(_json_text(getattr(world, "article_metadata", None)).encode()).hexdigest()
+        if text_digest != metadata["article_text_digest"]:
+            raise ValueError("Checkpoint article text does not match the supplied catalogue")
     algorithm = metadata["algorithm"]
     if algorithm not in REGISTRY:
         raise ValueError("Unknown checkpoint recommender")
@@ -160,12 +169,8 @@ def load_checkpoint(path, world):
     rng = np.random.Generator(BIT_GENERATORS[generator]())
     rec = REGISTRY[algorithm](**metadata["settings"])
     rec.reset(world, metadata["U"], rng)
-    if "counts" in values:
-        counts = values["counts"]
-        if counts.shape != (world.N,) or not np.isfinite(counts).all() or (counts < 0).any():
-            raise ValueError("Invalid learned counts in checkpoint")
-        rec.counts = counts
-    # reset currently draws no values; setting after reset also supports future resets.
+    rec.restore_model_state(values)
+    # Restore saved RNG after reset, which may draw initialization values.
     rng.bit_generator.state = state
     return rec
 

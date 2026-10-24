@@ -44,7 +44,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                    recommender: Recommender | None = None,
                    profiles: np.ndarray | None = None,
                    seen: np.ndarray | None = None,
-                   recorder=None) -> dict:
+                   recorder=None, query_texts=None) -> dict:
     pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
     bel = Beliefs(world, pop, p)
     rec = recommender or NoRecommender()
@@ -68,8 +68,11 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                        {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
 
     for t in range(T):
+        extra = {"profiles": profiles} if profiles is not None else {}
+        if query_texts is not None:
+            extra["query_texts"] = query_texts
         state = SimState(world, t, ~consumed, history, ratings, active.copy(),
-                         extra={"profiles": profiles} if profiles is not None else {})
+                         extra=extra)
         if recorder is not None:
             recorder.before_round(state, rec,
                                   {"belief_mean": bel.mean, "belief_variance": bel.var,

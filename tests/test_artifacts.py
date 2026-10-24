@@ -15,11 +15,15 @@ from src.sim.world import World
 
 
 def world_fixture():
-    return World(N=4, D=np.ones((4, 4)) - np.eye(4), C=np.eye(4), rho=0.,
+    world = World(N=4, D=np.ones((4, 4)) - np.eye(4), C=np.eye(4), rho=0.,
                  ids=np.array(["n0", "n1", "n2", "n3"], dtype=object),
                  cats=np.array(["a", "a", "b", "b"], dtype=object),
                  profile_vecs=np.array([[1., 0.], [.8, .6], [0., 1.], [-1., 0.]]),
                  popularity=np.array([4., 3., 2., 1.]), kind="news")
+    world.article_metadata = [{"news_id": f"n{i}", "title": title}
+                              for i, title in enumerate(("sports cricket", "sports football",
+                                                         "politics election", "health medicine"))]
+    return world
 
 
 def state_fixture(world):

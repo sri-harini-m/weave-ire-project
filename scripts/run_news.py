@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.sim.experiment import run_grid, summarise
 from src.sim.news_users import attach_user_pool, sample_news_users
 from src.sim.recommenders import REGISTRY
+from src.sim.recommender_config import recommender_options
 from src.sim.run_bundle import RunBundle
 from src.sim.world import describe, news_world
 
@@ -99,15 +100,11 @@ def execute_news(args, full, out):
         settings = full.get("recommenders", {})
         recs = {}
         for r in args.recommenders:
-            options = {"K": settings.get("K", 10)}
-            if r in ("popularity", "content", "mmr"):
-                options["prior_weight"] = settings.get("prior_weight", 1.0)
-            if r in ("content", "mmr"):
-                options["profile_weight"] = settings.get("profile_weight", 1.0)
+            options = recommender_options(r, settings)
             if r == "mmr":
                 options["diversity_weight"] = args.mmr_diversity_weight \
                     if args.mmr_diversity_weight is not None \
-                    else settings.get("diversity_weight", 0.3)
+                    else options.get("diversity_weight", 0.3)
                 if args.mmr_diversity_weights is not None:
                     for weight in args.mmr_diversity_weights:
                         recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
