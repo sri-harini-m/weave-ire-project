@@ -11,7 +11,8 @@ processes without being copied for every job.
 import numpy as np
 
 
-def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0):
+def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
+                     fresh_readers: bool = True):
     rng = np.random.default_rng(seed)
     uids = store.user_ids()
     if len(uids) > max_users:
@@ -22,9 +23,10 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0):
     for k, u in enumerate(uids):
         hist = store.history(u)
         profiles[k] = store.embeddings[[store.index[n] for n in hist]].mean(0)
-        for n in hist:
-            if n in pos:
-                seen[k, pos[n]] = True
+        if not fresh_readers:
+            for n in hist:
+                if n in pos:
+                    seen[k, pos[n]] = True
     world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen}
     return world
 

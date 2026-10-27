@@ -62,7 +62,8 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
     left_at = np.full(U, T)                  # round at which the user left
 
     for t in range(T):
-        state = SimState(world, t, ~consumed, history, ratings, active.copy())
+        extra = {"profiles": profiles} if profiles is not None else {}
+        state = SimState(world, t, ~consumed, history, ratings, active.copy(), extra=extra)
         slates = rec.recommend(state)
 
         score = bel.certainty_equivalent(p.gamma)

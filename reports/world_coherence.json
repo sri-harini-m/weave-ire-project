@@ -1,0 +1,18 @@
+{
+  "N": 500,
+  "rho": 0.5,
+  "corr_mean": 0.11806443862694588,
+  "corr_p50": 0.09510582722102007,
+  "corr_p99": 0.39342235597518077,
+  "min_eig": -1.4022252340638871e-15,
+  "n_categories": 14,
+  "N_articles": 500,
+  "k_neighbors": 5,
+  "nn_category_agreement": 0.5008,
+  "random_category_agreement": 0.163056,
+  "category_coherence_lift": 3.0713374546168186,
+  "nn_correlation_mean": 0.5056359839751832,
+  "mean_correlation_all_pairs": 0.11806443862694588,
+  "min_eigenvalue": -1.4022252340638871e-15,
+  "is_positive_semidefinite": true
+}

@@ -31,6 +31,7 @@ class World:
     ids: np.ndarray | None = None
     popularity: np.ndarray | None = None   # [N] in [0, 1], news only
     profile_vecs: np.ndarray | None = None  # [N, dim] embeddings, news only
+    article_metadata: list[dict] | None = None
     kind: str = "circle"
 
     def __post_init__(self):
@@ -95,9 +96,11 @@ def news_world(store, N: int = 500, rho: float = 0.5, pca_dims: int = 8,
     C = _corr_from_distance(dist, unit=unit, rho=rho)
 
     art = store.articles.iloc[rows]
+    metadata = art[["news_id", "title", "abstract"]].to_dict(orient="records")
     return World(N=N, D=dist / dist.max(), C=C, rho=rho, unit=unit / dist.max(),
                  cats=art["category"].to_numpy(), ids=art["news_id"].to_numpy(),
-                 popularity=store.popularity[rows], profile_vecs=E, kind="news")
+                 popularity=store.popularity[rows], profile_vecs=E,
+                 article_metadata=metadata, kind="news")
 
 
 def describe(world: World) -> dict:
