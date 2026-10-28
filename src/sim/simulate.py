@@ -18,6 +18,7 @@ Each round, for every active user:
   7. the recommender observes the feedback
 """
 import numpy as np
+from time import perf_counter
 
 from .params import Params
 from .recommenders import NoRecommender, Recommender, SimState
@@ -42,7 +43,8 @@ def fatigue_kernel(world: World, fatigue_rho: float) -> np.ndarray:
 def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                    recommender: Recommender | None = None,
                    profiles: np.ndarray | None = None,
-                   seen: np.ndarray | None = None) -> dict:
+                   seen: np.ndarray | None = None,
+                   recorder=None, query_texts=None) -> dict:
     pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
     bel = Beliefs(world, pop, p)
     rec = recommender or NoRecommender()
@@ -61,10 +63,23 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
     pen = np.full((U, T), np.nan)            # fatigue penalty at that moment
     left_at = np.full(U, T)                  # round at which the user left
 
+    if recorder is not None:
+        recorder.start(world, p, rec, rng, profiles, consumed,
+                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
+
     for t in range(T):
         extra = {"profiles": profiles} if profiles is not None else {}
-        state = SimState(world, t, ~consumed, history, ratings, active.copy(), extra=extra)
+        if query_texts is not None:
+            extra["query_texts"] = query_texts
+        state = SimState(world, t, ~consumed, history, ratings, active.copy(),
+                         extra=extra)
+        if recorder is not None:
+            recorder.before_round(state, rec,
+                                  {"belief_mean": bel.mean, "belief_variance": bel.var,
+                                   "fatigue": F})
+        started = perf_counter()
         slates = rec.recommend(state)
+        recommendation_seconds = perf_counter() - started
 
         score = bel.certainty_equivalent(p.gamma)
         if p.phi > 0 and p.fatigue_aware:
@@ -100,6 +115,16 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                 F[users] += Kf[items]
         if users:
             rec.observe(state, np.array(users), np.array(items), np.array(fb))
+        if recorder is not None:
+            recorder.after_round(t, slates, np.array(users, dtype=int),
+                                 np.array(items, dtype=int), np.array(fb, dtype=float), rec,
+                                 {"choice_scores": score, "active_after": active,
+                                  "fatigue_after": F, "belief_mean_after": bel.mean,
+                                  "belief_variance_after": bel.var,
+                                  "recommendation_seconds": recommendation_seconds})
 
-    return {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
-            "X": pop.X, "V": pop.V}
+    run = {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
+           "X": pop.X, "V": pop.V}
+    if recorder is not None:
+        recorder.finish(run)
+    return run

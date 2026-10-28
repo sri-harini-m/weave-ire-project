@@ -11,6 +11,19 @@ embedding:
 users:
   min_history: 10   # only keep users with at least this many past clicks
 
+recommenders:
+  K: 10
+  prior_weight: 1.0      # total popularity pseudocount mass before simulated reads
+  profile_weight: 1.0    # initial visible profile counts as one normalized article
+  diversity_weight: 0.3  # MMR penalty; 0 exactly matches content-based ranking
+  bm25:
+    k1: 1.2
+    b: 0.75
+  mf:
+    factors: 8
+    regularization: 1.0
+    iterations: 3
+
 # ---- Step 1: reproduce Aridor et al. on the circle --------------------------
 aridor:
   N: 200          # items on the circle (paper)
