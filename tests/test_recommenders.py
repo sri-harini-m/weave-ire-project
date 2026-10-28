@@ -264,5 +264,22 @@ def test_simulator_exposes_only_supplied_profile_to_recommender():
             assert "X" not in state.extra and "V" not in state.extra
             return super().recommend(state)
 
+    run_population(world, Params(T=2, reader_history_visible=True), 2,
+                   np.random.default_rng(5), InspectContent(K=2), profiles=profiles)
+
+
+def test_new_user_default_hides_reader_history_from_recommender():
+    """Default (new-user) mode: recommenders never see real MIND history."""
+    world = make_world()
+    world.profile_vecs[5] = [.6, .8]
+    profiles = np.array([[1., .2], [.2, 1.]])
+
+    class InspectContent(ContentBasedRecommender):
+        def recommend(self, state):
+            assert "profiles" not in state.extra
+            assert "query_texts" not in state.extra
+            return super().recommend(state)
+
     run_population(world, Params(T=2), 2, np.random.default_rng(5),
-                   InspectContent(K=2), profiles=profiles)
+                   InspectContent(K=2), profiles=profiles,
+                   query_texts=["sports", "politics"])

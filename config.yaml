@@ -53,6 +53,7 @@ news:
   T: 20
   seed: 42
   base:              # fixed model parameters
+    reader_history_visible: false  # false = new users (fair); true = returning users
     sigma: 1.0
     sigma_bar: 1.0
     beta: 1.0

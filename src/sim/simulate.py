@@ -68,9 +68,14 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                        {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
 
     for t in range(T):
-        extra = {"profiles": profiles} if profiles is not None else {}
-        if query_texts is not None:
-            extra["query_texts"] = query_texts
+        # Readers' real MIND history reaches recommenders only in the
+        # "returning user" setting; readers' own beliefs always use it.
+        extra = {}
+        if p.reader_history_visible:
+            if profiles is not None:
+                extra["profiles"] = profiles
+            if query_texts is not None:
+                extra["query_texts"] = query_texts
         state = SimState(world, t, ~consumed, history, ratings, active.copy(),
                          extra=extra)
         if recorder is not None:

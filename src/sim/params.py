@@ -23,6 +23,12 @@ class Params:
     fatigue_aware: bool = True   # do users anticipate fatigue when choosing?
     outside_option: float | None = None  # leave if best option is worse than this
 
+    # ---- What recommenders may see ----------------------------------------
+    # False (default) = "new user": recommenders learn only from what readers do
+    # inside the simulation. True = "returning user": recommenders also see each
+    # reader's real MIND history (profile vector and past-click text).
+    reader_history_visible: bool = False
+
     # ---- News-only options -----------------------------------------------
     common_from_popularity: bool = False  # shift V's mean by real popularity
 

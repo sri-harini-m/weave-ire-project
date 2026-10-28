@@ -80,7 +80,8 @@ def test_visible_query_text_reaches_saved_simulator_input(tmp_path):
     world, _, rec = setup_rec("bm25")
     query_texts = ["sports", "politics", "health"]
     archive = PopulationArchive(tmp_path / "bm25")
-    run_population(world, Params(T=2), 3, np.random.default_rng(6),
-                   rec, recorder=archive, query_texts=query_texts)
+    run_population(world, Params(T=2, reader_history_visible=True), 3,
+                   np.random.default_rng(6), rec, recorder=archive,
+                   query_texts=query_texts)
     assert load_state(archive.path, 0).extra["query_texts"] == query_texts
     assert json.loads((archive.path / "rounds" / "round_0000_input.json").read_text())["extra"]["query_texts"] == query_texts
