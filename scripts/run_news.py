@@ -78,6 +78,9 @@ def main():
     weights.add_argument("--mmr-diversity-weights", type=float, nargs="+", default=None,
                         help="Save a comparison of several MMR penalty settings")
     ap.add_argument("--out", default="results/news")
+    ap.add_argument("--no-archive", action="store_true",
+                    help="skip the per-round population archives (saves a lot of disk); "
+                         "summary CSVs and figures are still written")
     args = ap.parse_args()
 
     full = yaml.safe_load(Path(args.config).read_text())
@@ -123,15 +126,17 @@ def execute_news(args, full, out):
                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
                           seed=cfg["seed"], recommenders=recs,
                           users_fn=partial(sample_news_users, U=cfg["U"]),
-                          workers=args.workers, keep_curves=True, archive_dir=out)
+                          workers=args.workers, keep_curves=True,
+                          archive_dir=None if getattr(args, "no_archive", False) else out)
     df.to_csv(out / "original_populations.csv", index=False)
     curves.to_csv(out / "original_curves.csv", index=False)
     by = [k for k in grid if k != "info"] + ["info", "recommender"]
     s = summarise(df, by, METRICS)
     s.to_csv(out / "original_summary.csv", index=False)
     plot(s, curves, out / "original_figures.png", group)
-    from src.sim.reporting import rebuild_report
-    rebuild_report(out)
+    if not getattr(args, "no_archive", False):
+        from src.sim.reporting import rebuild_report
+        rebuild_report(out)
     print(s.groupby(group)[["cat_entropy", "homogeneity", "welfare_net", "fatigue"]]
           .mean().round(3))
     print("Saved to", out)
