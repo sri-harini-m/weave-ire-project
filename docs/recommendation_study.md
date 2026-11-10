@@ -1,18 +1,5 @@
 # Recommendation study: controls, feedback and saved comparisons
 
-## Repository inventory checked on November 10, 2026
-
-Remote branches were `main`, `sbidisha_dev`, and `akshara`. Main already merged
-the simulator/data pipeline and existing recommenders.
-The development branch was fast-forwarded to main commit `c59e0d9` before this work.
-Akshara's branch contains the earlier Person A implementation.
-
-Existing components include the MIND preparation/store modules, reader validation,
-circle reproduction checks, news metrics, history visibility flag, and published
-Person A reports. The processed MIND arrays are Git-ignored and are not in any
-remote branch. Existing published results must not be presented as reruns of the
-new controls in this document.
-
 ## Requested controls
 
 | Control | Implementation |
@@ -24,8 +11,8 @@ new controls in this document.
 | Full diagnostic arrays | `--archive-diagnostics`; omitted by default |
 | Reader departures | Optional `--outside-option VALUE`; default reader behavior is retained |
 
-The `reader_history_visible` flag already existed in main. The new controls make
-it convenient to compare both settings with the same populations and catalogue.
+The `reader_history_visible` controls compare both settings with the same
+populations and catalogue.
 Initial reader beliefs remain grounded in the same profiles. Only the initial
 information available to recommenders changes. Simulated histories still start
 empty, and subsequent simulated reads remain visible in both settings.
