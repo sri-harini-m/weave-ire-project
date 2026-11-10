@@ -56,6 +56,8 @@ def benchmark(world, profiles, name, rounds, k, seed, simulator=False):
     rec = REGISTRY[name](K=k)
     start = perf_counter()
     rec.reset(world, users, np.random.default_rng(seed))
+    if getattr(rec, "reference_only", False):
+        rec.set_reference_values(profiles @ world.profile_vecs.T)
     reset_seconds = perf_counter() - start
     state = SimState(world, 0, np.ones((users, world.N), dtype=bool),
                      [[] for _ in range(users)], np.full((users, world.N), np.nan),

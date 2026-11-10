@@ -1,0 +1,26 @@
+{
+  "dataset": "MIND-small train and dev news; train clicks and histories",
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "fake_embeddings": false,
+  "embedding_shape": [
+    65238,
+    384
+  ],
+  "embedding_dtype": "float32",
+  "maximum_norm_error": 1.1920928955078125e-07,
+  "files": {
+    "articles.csv": {
+      "bytes": 20234435,
+      "sha256": "30b5fc354620d2dcbe7cc98f01cda682c97675a68806ca87e9a3bfbf51c249a3"
+    },
+    "embeddings.npy": {
+      "bytes": 100205696,
+      "sha256": "87eb8c73b8f1b2a8b7bd07181d84fa1160015ab26c99b3db98c3ba8517a2a7d1"
+    },
+    "user_histories.json": {
+      "bytes": 10754747,
+      "sha256": "64088fe4f7e52a666927467dcdfa8794755559de4cfcaf3886f6bf4de9f69c7e"
+    }
+  }
+}

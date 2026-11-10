@@ -1,0 +1,42 @@
+{
+  "data_kind": "synthetic engineering validation only",
+  "bundle": "results/study_validation/synthetic_controls/20261110T150833619516Z_993a99a5",
+  "manifest_verified": true,
+  "raw_file_count": 7041,
+  "raw_checksums_unchanged": true,
+  "summary_checksum_unchanged": true,
+  "population_count": 320,
+  "complete_populations": 320,
+  "condition_count": 320,
+  "slate_sizes": [
+    5,
+    10,
+    25,
+    50,
+    500
+  ],
+  "history_modes": [
+    false,
+    true
+  ],
+  "mmr_weights": [
+    0.0,
+    0.3,
+    0.6,
+    0.9,
+    1.0
+  ],
+  "final_models": 320,
+  "intermediate_models": 0,
+  "snapshot_policies": [
+    "final"
+  ],
+  "archive_diagnostics": [
+    false
+  ],
+  "offline_rebuild": {
+    "exit_code": 0,
+    "seconds": 22.928771499893628
+  },
+  "rebuild_log": "results/study_validation/synthetic_rebuild_check.log"
+}

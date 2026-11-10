@@ -23,12 +23,18 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
     histories = []
     query_texts = []
     article_records = store.articles.set_index("news_id").to_dict("index")
+    categories = np.unique(world.cats) if world.cats is not None else np.array([])
+    category_index = {category: i for i, category in enumerate(categories)}
+    category_profiles = np.zeros((len(uids), len(categories)))
     for k, u in enumerate(uids):
         hist = store.history(u)
         histories.append(list(hist))
         text = []
         for news_id in hist:
             article = article_records.get(news_id, {})
+            category = article.get("category")
+            if category in category_index:
+                category_profiles[k, category_index[category]] += 1
             text.extend(article[key] for key in ("title", "abstract")
                         if isinstance(article.get(key), str))
         query_texts.append(" ".join(text))
@@ -38,7 +44,8 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
                 if n in pos:
                     seen[k, pos[n]] = True
     world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen,
-                       "histories": histories, "query_texts": query_texts}
+                       "histories": histories, "query_texts": query_texts,
+                       "category_profiles": category_profiles}
     return world
 
 
@@ -51,4 +58,6 @@ def sample_news_users(world, rng, U: int):
         if "histories" in pool else None
     world.sampled_query_texts = [pool["query_texts"][i] for i in idx] \
         if "query_texts" in pool else None
+    world.sampled_category_profiles = pool["category_profiles"][idx] \
+        if "category_profiles" in pool else None
     return pool["profiles"][idx], pool["seen"][idx]

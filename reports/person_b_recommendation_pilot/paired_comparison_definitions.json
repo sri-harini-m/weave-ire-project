@@ -1,0 +1,7 @@
+{
+  "direction": "Each difference is left minus right for the same saved seed and population.",
+  "history": "Returning-reader visibility minus new-reader visibility; all other simulator/model controls match.",
+  "fatigue_feedback": "Fatigue-aware algorithm minus its blind counterpart; shared model settings match and aware-only knobs remain labeled.",
+  "vs_none": "Each exact method/configuration minus full-catalogue browsing at matching simulator controls and slate-size request.",
+  "limits": "Descriptive matched simulation comparisons. Unmatched rows are counted in paired_comparison_coverage.csv; reference_only rows remain explicitly flagged."
+}

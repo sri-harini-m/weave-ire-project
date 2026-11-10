@@ -15,6 +15,7 @@ from src.sim.news_users import attach_user_pool, sample_news_users
 from src.sim.recommenders import REGISTRY
 from src.sim.recommender_config import recommender_options
 from src.sim.run_bundle import RunBundle
+from src.sim.study import add_study_arguments, apply_visibility, factories, slate_sizes, MMR_WEIGHTS, write_comparisons
 from src.sim.world import describe, news_world
 
 METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
@@ -70,6 +71,7 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--n-pop", type=int, default=None)
+    add_study_arguments(ap)
     ap.add_argument("--recommenders", nargs="*", default=None, choices=list(REGISTRY),
                     help=f"slate recommenders to compare: {list(REGISTRY)}")
     weights = ap.add_mutually_exclusive_group()
@@ -97,22 +99,16 @@ def execute_news(args, full, out):
     cfg = full["news"]
     store = MindStore(args.config)
 
-    grid = dict(cfg["grid"])
+    grid = apply_visibility(args, dict(cfg["grid"]))
+    sizes = slate_sizes(args, full.get("recommenders", {}).get("K", 10))
     recs, group = None, "info"
     if args.recommenders:
         settings = full.get("recommenders", {})
-        recs = {}
-        for r in args.recommenders:
-            options = recommender_options(r, settings)
-            if r == "mmr":
-                options["diversity_weight"] = args.mmr_diversity_weight \
-                    if args.mmr_diversity_weight is not None \
-                    else options.get("diversity_weight", 0.3)
-                if args.mmr_diversity_weights is not None:
-                    for weight in args.mmr_diversity_weights:
-                        recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
-                    continue
-            recs[r] = partial(REGISTRY[r], **options)
+        sweep = getattr(args, "mmr_diversity_weights", None)
+        if sweep is None:
+            single = getattr(args, "mmr_diversity_weight", None)
+            sweep = [single] if single is not None else MMR_WEIGHTS
+        recs = factories(args.recommenders, settings, sweep)
         grid["info"] = ["none"]
         group = "recommender"
 
@@ -122,21 +118,28 @@ def execute_news(args, full, out):
     (out / "world.json").write_text(json.dumps(diag, indent=2))
     print("World:", diag)
 
-    df, curves = run_grid(world_fn, grid, base={**cfg["base"], "T": cfg["T"]},
+    base = {**cfg["base"], "T": cfg["T"]}
+    if getattr(args, "outside_option", None) is not None:
+        base["outside_option"] = args.outside_option
+    df, curves = run_grid(world_fn, grid, base=base,
                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
                           seed=cfg["seed"], recommenders=recs,
                           users_fn=partial(sample_news_users, U=cfg["U"]),
                           workers=args.workers, keep_curves=True,
-                          archive_dir=None if getattr(args, "no_archive", False) else out)
+                          archive_dir=None if getattr(args, "no_archive", False) else out,
+                          slate_sizes=sizes, snapshot_policy=getattr(args, "snapshot_policy", "final"),
+                          diagnostics=getattr(args, "archive_diagnostics", False))
     df.to_csv(out / "original_populations.csv", index=False)
     curves.to_csv(out / "original_curves.csv", index=False)
-    by = [k for k in grid if k != "info"] + ["info", "recommender"]
+    by = list(dict.fromkeys([k for k in grid if k != "info"] + ["info", "recommender", "K", "reader_history_visible"]))
     s = summarise(df, by, METRICS)
     s.to_csv(out / "original_summary.csv", index=False)
-    plot(s, curves, out / "original_figures.png", group)
+    if len(s) <= 24:
+        plot(s, curves, out / "original_figures.png", group)
     if not getattr(args, "no_archive", False):
         from src.sim.reporting import rebuild_report
         rebuild_report(out)
+        write_comparisons(out)
     print(s.groupby(group)[["cat_entropy", "homogeneity", "welfare_net", "fatigue"]]
           .mean().round(3))
     print("Saved to", out)

@@ -42,6 +42,11 @@ METRIC_DEFINITIONS = {
     "exposure_events": "Number of article positions in explicitly returned slates; NaN for none baseline.",
     "step_distance": "Per-round mean world distance between consecutive reads, where both exist.",
     "active_share": "Fraction not explicitly dropped out after each round; exhaustion does not imply dropout.",
+    "reported_boredom_rate": "Mean observed coarse boredom flag across reported read events; not latent fatigue or inferred dissatisfaction.",
+    "reported_departures": "Total recorded explicit reader-departure signals; missing when no signals were archived.",
+    "departures": "Number of explicit departure signals in a round.",
+    "recommendation_seconds": "Measured recommendation-call duration for a round, excluding archive writes and reader simulation.",
+    "total_recommendation_seconds": "Sum of measured recommendation-call durations across rounds.",
     "ci95": "Normal approximation: 1.96 * sample standard deviation / sqrt(population count), independently per condition; NaN for n < 2.",
     "limitations": "Article overlap is a homogenization proxy, not ideological agreement. No CTR or click model is inferred. Synthetic data are engineering checks, not MIND findings.",
 }
@@ -176,10 +181,11 @@ def _metadata(directory):
     settings = meta.get("recommender_settings", {})
     row = {k: v for k, v in params.items() if v is None or isinstance(v, (str, bool, int, float))}
     row.update({k: v for k, v in settings.items() if v is None or isinstance(v, (str, bool, int, float))})
-    for key in ("rho", "phi", "info", "diversity_weight", "data_kind"):
+    for key in ("rho", "phi", "info", "diversity_weight", "data_kind", "requested_K", "reference_only"):
         if key in meta:
             row[key] = meta[key]
     row["recommender"] = meta.get("recommender", meta.get("algorithm", "unknown"))
+    row["algorithm"] = meta.get("algorithm", row["recommender"])
     row["population"] = meta.get("population", meta.get("pop", directory.name))
     row["seed"] = meta.get("seed")
     row["archive"] = str(directory)
@@ -216,6 +222,141 @@ def _read_slates(directory, T):
     return slates
 
 
+def _observed_metrics(directory, curves, metrics):
+    """Add only recorded feedback signals and measured call times."""
+    flags, departures, times = [], [], []
+    for t in curves["t"]:
+        path = directory / "rounds" / f"round_{t:04d}_output.npz"
+        if not path.exists():
+            flags.append(None); departures.append(np.nan); times.append(np.nan)
+            continue
+        with np.load(path, allow_pickle=False) as saved:
+            boredom = saved["feedback_boredom"].copy() if "feedback_boredom" in saved else None
+            if boredom is not None and (boredom.ndim != 1 or not np.isfinite(boredom).all()
+                                         or (boredom < 0).any() or (boredom > 1).any()):
+                raise ValueError("Saved boredom signals must be finite values in [0, 1]")
+            flags.append(boredom)
+            departures.append(len(saved["feedback_left_users"]) if "feedback_left_users" in saved else np.nan)
+            times.append(float(saved["diagnostic_recommendation_seconds"])
+                         if "diagnostic_recommendation_seconds" in saved else np.nan)
+    curves["reported_boredom_rate"] = [_mean(f) if f is not None else np.nan for f in flags]
+    curves["departures"] = departures
+    curves["recommendation_seconds"] = times
+    reported = [f for f in flags if f is not None]
+    metrics["reported_boredom_rate"] = _mean(np.concatenate(reported)) if reported else np.nan
+    metrics["reported_departures"] = float(np.nansum(departures)) if np.isfinite(departures).any() else np.nan
+    metrics["total_recommendation_seconds"] = float(np.nansum(times)) if np.isfinite(times).any() else np.nan
+
+
+def _constructor_columns():
+    from inspect import signature
+    from .recommenders import REGISTRY
+    return {name for rec in REGISTRY.values() for name in signature(rec.__init__).parameters if name != "self"}
+
+
+def paired_comparisons(frame, condition_columns, metric_columns, model_columns=None):
+    """Return exact matched-population differences, preserving model controls.
+
+    Only the named contrast changes. Missing population IDs/seeds are never
+    matched. A nonunique baseline is rejected instead of being averaged.
+    """
+    model_columns = set(model_columns or _constructor_columns())
+    identity = {"recommender", "algorithm", "reference_only"}
+    conditions = [c for c in condition_columns if c in frame]
+    measurements = [m for m in metric_columns if m in frame]
+    required = ["seed", "population"]
+    if not all(c in frame for c in required):
+        usable = frame.iloc[:0]
+    else:
+        usable = frame[frame[required].notna().all(axis=1)]
+    algorithm = usable.get("algorithm", usable.get("recommender", pd.Series(dtype=str)))
+    outputs = {}
+
+    def match(left, right, keys, comparison):
+        keys = list(dict.fromkeys([c for c in keys + required if c in frame]))
+        schema = list(dict.fromkeys(["comparison", "left_recommender", "right_recommender"]
+                                   + conditions + required + ["left_archive", "right_archive"]
+                                   + [m + suffix for m in measurements for suffix in ("_left", "_right", "_difference")]))
+        if left.empty or right.empty:
+            result = pd.DataFrame(columns=schema)
+        else:
+            if right.duplicated(keys).any():
+                raise ValueError(f"Ambiguous matched baseline for {comparison}; model settings or population controls differ")
+            merged = left.merge(right, on=keys, suffixes=("_left", "_right"), validate="many_to_one")
+            values = {"comparison": comparison,
+                      "left_recommender": merged["recommender"] if "recommender" in keys else merged["recommender_left"],
+                      "right_recommender": merged["recommender"] if "recommender" in keys else merged["recommender_right"]}
+            for c in conditions + required:
+                values[c] = merged[c] if c in keys else merged[c + "_left"]
+            for side in ("left", "right"):
+                values[side + "_archive"] = merged.get("archive_" + side, pd.Series(index=merged.index, dtype=str))
+            for metric in measurements:
+                values[metric + "_left"] = merged[metric + "_left"]
+                values[metric + "_right"] = merged[metric + "_right"]
+                values[metric + "_difference"] = pd.to_numeric(merged[metric + "_left"], errors="coerce") \
+                    - pd.to_numeric(merged[metric + "_right"], errors="coerce")
+            result = pd.DataFrame(values, index=merged.index).reindex(columns=schema)
+        result.attrs["candidate_left_rows"] = len(left)
+        result.attrs["matched_rows"] = len(result)
+        result.attrs["unmatched_left_rows"] = len(left) - len(result)
+        return result
+
+    if "reader_history_visible" in usable:
+        history_left = usable[usable["reader_history_visible"].eq(True)]
+        history_right = usable[usable["reader_history_visible"].eq(False)]
+    else:
+        history_left = history_right = usable.iloc[:0]
+    outputs["paired_history_visibility"] = match(history_left, history_right,
+        [c for c in conditions if c != "reader_history_visible"], "returning_minus_new")
+    aware_outputs = []
+    coverage = {"candidate_left_rows": 0, "matched_rows": 0, "unmatched_left_rows": 0}
+    for aware, blind in (("fatigue_popularity", "popularity"), ("fatigue_content", "content"), ("fatigue_mf", "mf")):
+        left, right = usable[algorithm.eq(aware)], usable[algorithm.eq(blind)]
+        shared = [c for c in model_columns if c in frame and left[c].notna().any() and right[c].notna().any()]
+        controls = [c for c in conditions if c not in identity | model_columns] + shared
+        paired = match(left, right, controls, "fatigue_aware_minus_blind")
+        for key in coverage:
+            coverage[key] += paired.attrs[key]
+        aware_outputs.append(paired)
+    populated = [table for table in aware_outputs if len(table)]
+    outputs["paired_fatigue_feedback"] = pd.concat(populated, ignore_index=True) \
+        if populated else aware_outputs[0].copy()
+    outputs["paired_fatigue_feedback"].attrs.update(coverage)
+    baseline = usable[algorithm.eq("none")]
+    methods = usable[~algorithm.eq("none")]
+    # Baseline has no personalized model, so only common constructor controls
+    # (normally K) can be matched; every left model configuration remains a row.
+    shared = [c for c in model_columns if c in frame and methods[c].notna().any() and baseline[c].notna().any()
+              and c != "reference_only"]
+    controls = [c for c in conditions if c not in identity | model_columns] + shared
+    outputs["paired_vs_none"] = match(methods, baseline, controls, "method_minus_none")
+    return outputs
+
+
+def _save_paired_tables(frame, condition_columns, metric_columns, output, model_columns):
+    paired = paired_comparisons(frame, condition_columns, metric_columns, model_columns)
+    coverage = []
+    for name, table in paired.items():
+        table.to_csv(output / f"{name}.csv", index=False)
+        coverage.append({"comparison": name, **table.attrs})
+        differences = [c for c in table if c.endswith("_difference")]
+        controls = [c for c in ["comparison", "left_recommender", "right_recommender"] + condition_columns if c in table]
+        if len(table):
+            summary = _summarize(table, list(dict.fromkeys(controls)), differences)
+            summary = summary.rename(columns={"n_populations": "n_pairs"})
+        else:
+            summary = pd.DataFrame(columns=list(dict.fromkeys(controls)) + ["n_pairs"] + differences)
+        summary.to_csv(output / f"{name}_summary.csv", index=False)
+    pd.DataFrame(coverage).to_csv(output / "paired_comparison_coverage.csv", index=False)
+    (output / "paired_comparison_definitions.json").write_text(json.dumps({
+        "direction": "Each difference is left minus right for the same saved seed and population.",
+        "history": "Returning-reader visibility minus new-reader visibility; all other simulator/model controls match.",
+        "fatigue_feedback": "Fatigue-aware algorithm minus its blind counterpart; shared model settings match and aware-only knobs remain labeled.",
+        "vs_none": "Each exact method/configuration minus full-catalogue browsing at matching simulator controls and slate-size request.",
+        "limits": "Descriptive matched simulation comparisons. Unmatched rows are counted in paired_comparison_coverage.csv; reference_only rows remain explicitly flagged."
+    }, indent=2) + "\n")
+
+
 def _summarize(frame, group_columns, value_columns):
     rows = []
     for keys, group in frame.groupby(group_columns, dropna=False, sort=False):
@@ -233,7 +374,15 @@ def _summarize(frame, group_columns, value_columns):
     return pd.DataFrame(rows)
 
 
-def _figures(summary, curve_summary, output):
+def _figures(summary, curve_summary, output, condition_columns=None, model_columns=None):
+    if len(summary) > 24:
+        from .study_figures import study_figures
+        if condition_columns is None:
+            condition_columns = [c for c in summary if c not in METRIC_DEFINITIONS
+                                 and c not in ("condition_id", "n_populations")
+                                 and not c.endswith(("_ci95", "_n"))]
+        return study_figures(summary, output, condition_columns,
+                             _constructor_columns() if model_columns is None else model_columns)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -365,15 +514,20 @@ def rebuild_report(run_dir):
         raise ValueError(f"No saved population runs under {root / 'populations'}")
     populations, users, curves, skipped = [], [], [], []
     metadata_columns = set()
+    model_columns = set()
     for run_path in paths:
         directory = run_path.parent
         meta = _metadata(directory)
         metadata_columns.update(meta)
+        document = json.loads((directory / "metadata.json").read_text())
+        model_columns.update(k for k, v in document.get("recommender_settings", {}).items()
+                             if v is None or isinstance(v, (str, bool, int, float)))
         world = load_world(directory)
         with np.load(run_path, allow_pickle=False) as stored:
             run = {k: stored[k].copy() for k in stored.files}
         slate_data = _read_slates(directory, run["seq"].shape[1])
         user, metrics, curve = population_report(world, run, slate_data)
+        _observed_metrics(directory, curve, metrics)
         populations.append({**meta, **metrics})
         for key, value in meta.items():
             user[key] = value
@@ -402,10 +556,12 @@ def rebuild_report(run_dir):
                         ("curves_summary", curve_summary),
                         ("conditions", summary[["condition_id"] + group_columns])):
         frame.to_csv(output / f"{name}.csv", index=False)
+    _save_paired_tables(population_frame, group_columns, metric_columns, output, model_columns)
     (output / "metrics_definitions.json").write_text(json.dumps(METRIC_DEFINITIONS, indent=2) + "\n")
     (output / "sources.json").write_text(json.dumps({"population_archives": population_frame["archive"].tolist(),
         "skipped_incomplete_archives": skipped, "simulator_rerun": False}, indent=2) + "\n")
-    columns = [c for c in ("condition_id", "recommender", "rho", "phi", "diversity_weight",
+    columns = [c for c in ("condition_id", "recommender", "requested_K", "K", "reader_history_visible",
+                            "reference_only", "rho", "phi", "diversity_weight",
                             "data_kind", "n_populations", "cat_entropy", "diversity", "homogeneity",
                             "fatigue", "welfare_net", "catalog_coverage", "slate_ild") if c in summary]
     lines = ["# Saved experiment comparison", "", "Rebuilt from saved arrays. No simulator was rerun.", "",
@@ -430,6 +586,6 @@ def rebuild_report(run_dir):
     lines += ["", "Full numeric results, effective sample counts, and CI widths are in summary.csv.",
               "Plots use summary.csv and curves_summary.csv. Regenerate these outputs from the same archives when presentation needs change.", ""]
     (output / "summary.md").write_text("\n".join(lines))
-    _figures(summary, curve_summary, output / "figures")
+    _figures(summary, curve_summary, output / "figures", group_columns, model_columns)
     return {"output": str(output), "populations": len(population_frame),
             "conditions": len(summary), "summary": summary}
