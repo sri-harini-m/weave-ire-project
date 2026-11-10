@@ -1,5 +1,8 @@
 # Weave: filter bubbles and fatigue in news recommendation
 
+Short descriptions of all twelve methods for the main report are in
+[docs/recommender_report_descriptions.md](docs/recommender_report_descriptions.md).
+
 Person B's recommender input contract, defaults, and checks are in
 [docs/recommenders.md](docs/recommenders.md).
 Saved report artifacts and offline rebuild commands are in
