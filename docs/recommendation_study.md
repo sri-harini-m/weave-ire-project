@@ -3,7 +3,7 @@
 ## Repository inventory checked on November 10, 2026
 
 Remote branches were `main`, `sbidisha_dev`, and `akshara`. Main already merged
-Person A's simulator/data pipeline and Person B's existing recommenders.
+the simulator/data pipeline and existing recommenders.
 The development branch was fast-forwarded to main commit `c59e0d9` before this work.
 Akshara's branch contains the earlier Person A implementation.
 
@@ -170,7 +170,7 @@ and equivalent controls. Synthetic outputs remain explicitly labeled.
 ## Files for report preparation
 
 The completed November 10 pilot has 640 population runs across 320 conditions.
-Its [report pack](../reports/person_b_recommendation_pilot/README.md) includes tables,
+Its [report pack](../reports/recommendation_pilot/README.md) includes tables,
 settings, PNG/SVG figures, data provenance and verification evidence.
 The pilot uses real MIND inputs with simulated reader outcomes, not measured human fatigue.
 The full 20-population study remains a separate run.

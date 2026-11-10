@@ -115,7 +115,7 @@ Improved diversity does not automatically imply improved utility or lower fatigu
 The completed MIND-based pilot covers 320 conditions and 640 population runs.
 It uses two populations per condition and therefore provides limited precision.
 The larger study configuration is available, but that full study has not been run.
-See the [pilot report](../reports/person_b_recommendation_pilot/README.md) for results and verification evidence.
+See the [pilot report](../reports/recommendation_pilot/README.md) for results and verification evidence.
 
 ## Implementation and references
 

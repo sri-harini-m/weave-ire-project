@@ -1,4 +1,4 @@
-# Person B: recommendation pilot
+# Recommendation pilot
 
 This pilot uses real MIND-small articles and histories with simulated readers.
 Utilities, fatigue, boredom reports, and departures come from the simulator.

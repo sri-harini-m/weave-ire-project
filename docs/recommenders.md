@@ -1,4 +1,4 @@
-# Person B: recommender inputs and implementation
+# Recommender inputs and implementation
 
 For report-ready descriptions of all twelve current methods, see
 [recommender_report_descriptions.md](recommender_report_descriptions.md).

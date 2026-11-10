@@ -3,7 +3,7 @@
 Short descriptions of all twelve methods for the main report are in
 [docs/recommender_report_descriptions.md](docs/recommender_report_descriptions.md).
 
-Person B's recommender input contract, defaults, and checks are in
+The recommender input contract, defaults, and checks are in
 [docs/recommenders.md](docs/recommenders.md).
 Saved report artifacts and offline rebuild commands are in
 [docs/report_artifacts.md](docs/report_artifacts.md).
@@ -141,5 +141,5 @@ Decisions the paper leaves open (state these in the report):
 
 `data/` is in `.gitignore`. Each teammate runs steps 2–3 once on their own machine.
 
-The [Person B recommendation pilot](reports/person_b_recommendation_pilot/README.md)
+The [recommendation pilot](reports/recommendation_pilot/README.md)
 contains saved comparison tables, settings, figures, and verification evidence.
