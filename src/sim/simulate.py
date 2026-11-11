@@ -44,14 +44,30 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                    recommender: Recommender | None = None,
                    profiles: np.ndarray | None = None,
                    seen: np.ndarray | None = None,
-                   recorder=None, query_texts=None) -> dict:
-    pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
+                   recorder=None, query_texts=None,
+                   true_profiles: np.ndarray | None = None,
+                   history_lens: np.ndarray | None = None) -> dict:
+    if true_profiles is None and profiles is not None:
+        cand = getattr(world, "sampled_true_profiles", None)
+        if cand is not None and len(cand) == U:
+            true_profiles = cand
+    if history_lens is None and profiles is not None:
+        cand = getattr(world, "sampled_history_lens", None)
+        if cand is not None and len(cand) == U:
+            history_lens = cand
+
+    pop = Population(world, p, U, rng, profiles=profiles, seen=seen,
+                     true_profiles=true_profiles, history_lens=history_lens)
     bel = Beliefs(world, pop, p)
     rec = recommender or NoRecommender()
     rec.reset(world, U, rng)
 
+    gammas = pop.gammas
+    phis = pop.phis
+    decays = pop.decays
+
     N, T = world.N, p.T
-    Kf = fatigue_kernel(world, p.fatigue_rho) if p.phi > 0 else None
+    Kf = fatigue_kernel(world, p.fatigue_rho) if (phis > 0).any() or p.phi > 0 else None
     F = np.zeros((U, N))                     # fatigue state per user per item
     consumed = pop.seen.copy()
     active = np.ones(U, bool)
@@ -86,9 +102,9 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
         slates = rec.recommend(state)
         recommendation_seconds = perf_counter() - started
 
-        score = bel.certainty_equivalent(p.gamma)
-        if p.phi > 0 and p.fatigue_aware:
-            score = score - p.phi * F
+        score = bel.certainty_equivalent(gammas)
+        if (phis > 0).any() and p.fatigue_aware:
+            score = score - phis[:, None] * F
         allowed = ~consumed
         if slates is not None:
             mask = np.zeros_like(allowed)
@@ -106,7 +122,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                 active[i] = False
                 left_at[i] = t
                 continue
-            penalty = p.phi * F[i, n]
+            penalty = phis[i] * F[i, n]
             seq[i, t], val[i, t], pen[i, t] = n, pop.X[i, n], penalty
             consumed[i, n] = True
             history[i].append(n)
@@ -115,7 +131,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
             users.append(i); items.append(n); fb.append(ratings[i, n])
 
         if Kf is not None:                   # fatigue decays, then builds up
-            F *= p.fatigue_decay
+            F *= decays[:, None]
             if users:
                 F[users] += Kf[items]
         if users:
@@ -129,7 +145,9 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                                   "recommendation_seconds": recommendation_seconds})
 
     run = {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
-           "X": pop.X, "V": pop.V}
+           "X": pop.X, "V": pop.V, "reader_types": pop.reader_types,
+           "gammas": gammas, "phis": phis, "decays": decays,
+           "history_lens": getattr(pop, "history_lens", None)}
     if recorder is not None:
         recorder.finish(run)
     return run

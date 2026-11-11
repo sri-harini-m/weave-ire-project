@@ -104,7 +104,8 @@ def population_report(world, run, slates=None):
             _, counts = np.unique(world.cats[items], return_counts=True)
             dominant.append(float(counts.max() / counts.sum()) if counts.size else np.nan)
         users["dominant_category_share"] = dominant
-    metrics = {c: _mean(users[c]) for c in users.columns if c != "user"}
+    metrics = {c: _mean(users[c]) for c in users.columns
+               if c != "user" and pd.api.types.is_numeric_dtype(users[c])}
     counts = np.bincount(seq[valid], minlength=world.N)
     metrics["catalog_coverage"] = float(np.count_nonzero(counts) / world.N) if world.N else np.nan
     metrics["consumption_gini"], metrics["consumption_hhi"] = _concentration(counts)

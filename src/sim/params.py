@@ -23,6 +23,14 @@ class Params:
     fatigue_aware: bool = True   # do users anticipate fatigue when choosing?
     outside_option: float | None = None  # leave if best option is worse than this
 
+    # ---- Reader heterogeneity & History-dependent uncertainty -------------
+    uncertainty_n0: float | None = None  # prior uncertainty scaling: s2 = s0^2 * n0 / (n0 + n)
+    true_history_size: int = 10          # fixed number of recent clicks defining true tastes
+    min_user_history: int = 20           # min clicks required (split: >=10 prior, 10 true)
+    reader_types_enabled: bool = False   # enable heterogeneous reader archetypes
+    reader_type_proportions: dict | None = None  # {type_name: proportion}
+    reader_type_ranges: dict | None = None       # {param: (min, max)} for continuous draws
+
     # ---- What recommenders may see ----------------------------------------
     # False (default) = "new user": recommenders learn only from what readers do
     # inside the simulation. True = "returning user": recommenders also see each

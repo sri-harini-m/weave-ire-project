@@ -78,6 +78,12 @@ def main():
     weights.add_argument("--mmr-diversity-weights", type=float, nargs="+", default=None,
                         help="Save a comparison of several MMR penalty settings")
     ap.add_argument("--out", default="results/news")
+    ap.add_argument("--reader-types", action="store_true",
+                    help="Enable heterogeneous reader archetypes (cautious, explorer, easily_bored, average)")
+    ap.add_argument("--uncertainty-n0", type=float, default=None,
+                    help="History length uncertainty scale n0 (prior variance = s0^2 * n0 / (n0 + n))")
+    ap.add_argument("--outside-option", type=float, default=None,
+                    help="Utility threshold below which readers drop out of the session")
     ap.add_argument("--no-archive", action="store_true",
                     help="skip the per-round population archives (saves a lot of disk); "
                          "summary CSVs and figures are still written")
@@ -122,7 +128,15 @@ def execute_news(args, full, out):
     (out / "world.json").write_text(json.dumps(diag, indent=2))
     print("World:", diag)
 
-    df, curves = run_grid(world_fn, grid, base={**cfg["base"], "T": cfg["T"]},
+    base = {**cfg["base"], "T": cfg["T"]}
+    if getattr(args, "reader_types", False):
+        base["reader_types_enabled"] = True
+    if getattr(args, "uncertainty_n0", None) is not None:
+        base["uncertainty_n0"] = args.uncertainty_n0
+    if getattr(args, "outside_option", None) is not None:
+        base["outside_option"] = args.outside_option
+
+    df, curves = run_grid(world_fn, grid, base=base,
                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
                           seed=cfg["seed"], recommenders=recs,
                           users_fn=partial(sample_news_users, U=cfg["U"]),

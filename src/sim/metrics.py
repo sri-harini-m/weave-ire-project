@@ -32,7 +32,18 @@ def user_metrics(world: World, run: dict) -> pd.DataFrame:
     for i in range(seq.shape[0]):
         items = seq[i][seq[i] >= 0]
         m = len(items)
-        r = {"user": i, "rounds": int(run["left_at"][i]), "n_consumed": m}
+        r = {"user": i, "rounds": int(run["left_at"][i]), "n_consumed": m,
+             "dropout": int(run["left_at"][i] < seq.shape[1])}
+        if "reader_types" in run and run["reader_types"] is not None:
+            r["reader_type"] = str(run["reader_types"][i])
+        if "gammas" in run and run["gammas"] is not None:
+            r["gamma"] = float(run["gammas"][i])
+        if "phis" in run and run["phis"] is not None:
+            r["phi"] = float(run["phis"][i])
+        if "decays" in run and run["decays"] is not None:
+            r["fatigue_decay"] = float(run["decays"][i])
+        if "history_lens" in run and run["history_lens"] is not None:
+            r["history_len"] = int(run["history_lens"][i])
         if m >= 2:
             r["local_distance"] = float(D[items[:-1], items[1:]].mean())
             sub = D[np.ix_(items, items)]

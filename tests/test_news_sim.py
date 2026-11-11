@@ -138,3 +138,78 @@ def test_recommender_contract_and_slate_integrity(small_world):
 
     # 3. Observe callback was triggered
     assert rec.observed_calls == 8
+
+
+def test_history_length_sets_uncertainty(small_world, store):
+    """Test A7: Prior variance scales inversely with history length via n0."""
+    w = attach_user_pool(small_world, store, max_users=100, seed=0, min_history=20)
+    p = Params(info="none", uncertainty_n0=20.0)
+    rng = np.random.default_rng(42)
+    profiles, seen = sample_news_users(w, rng, U=20)
+
+    # Force artificial contrast in history lengths for testing
+    lens = np.array([5] * 10 + [80] * 10)
+    pop = Population(w, p, 20, rng, profiles=profiles, seen=seen, history_lens=lens)
+    bel = Beliefs(w, pop, p)
+
+    # Short history users (5 clicks) must have higher variance than long history users (80 clicks)
+    var_short = bel.var[0, :].mean()
+    var_long = bel.var[10, :].mean()
+    assert var_short > var_long
+    expected_ratio = (20.0 / (20.0 + 5)) / (20.0 / (20.0 + 80))
+    assert pytest.approx(var_short / var_long, rel=1e-3) == expected_ratio
+
+
+def test_separate_history_subsets_true_vs_believed(small_world, store):
+    """Test A8: History split into expected (prior) and true taste profiles."""
+    w = attach_user_pool(small_world, store, max_users=100, seed=0, min_history=20, true_history_size=10)
+    assert w.user_pool["total_qualified_users"] > 0
+    rng = np.random.default_rng(0)
+    profiles, seen = sample_news_users(w, rng, U=10)
+    true_profiles = w.sampled_true_profiles
+
+    assert profiles.shape == (10, 384)
+    assert true_profiles.shape == (10, 384)
+    # Profiles should reflect real taste drift (not strictly identical)
+    diff = np.abs(profiles - true_profiles).sum()
+    assert diff > 0.1, "Prior profile and recent true taste profile should reflect temporal drift"
+
+    p = Params(info="none")
+    pop = Population(w, p, 10, rng, profiles=profiles, seen=seen, true_profiles=true_profiles)
+    assert hasattr(pop, "v_true")
+    # v_true should differ from vbar
+    assert not np.allclose(pop.v_true, pop.vbar)
+
+
+def test_reader_types_heterogeneity(small_world):
+    """Test A5: Named reader types with custom gamma, phi, and fatigue_decay."""
+    p = Params(T=5, reader_types_enabled=True,
+               reader_type_proportions={"cautious": 0.5, "explorer": 0.5})
+    rng = np.random.default_rng(123)
+    run = run_population(small_world, p, 20, rng)
+
+    assert len(run["reader_types"]) == 20
+    assert set(run["reader_types"]) == {"cautious", "explorer"}
+
+    cautious_idx = [i for i, t in enumerate(run["reader_types"]) if t == "cautious"]
+    explorer_idx = [i for i, t in enumerate(run["reader_types"]) if t == "explorer"]
+
+    assert len(cautious_idx) > 0 and len(explorer_idx) > 0
+    assert (run["gammas"][cautious_idx] == 2.0).all()
+    assert (run["gammas"][explorer_idx] == 0.0).all()
+
+    um = user_metrics(small_world, run)
+    assert "reader_type" in um.columns
+    assert set(um["reader_type"].unique()) == {"cautious", "explorer"}
+
+
+def test_reader_types_ranges(small_world):
+    """Test drawing reader parameters from continuous uniform ranges."""
+    ranges = {"gamma": (0.2, 1.8), "phi": (0.3, 1.2), "fatigue_decay": (0.6, 0.9)}
+    p = Params(T=5, reader_types_enabled=True, reader_type_ranges=ranges)
+    rng = np.random.default_rng(99)
+    run = run_population(small_world, p, 30, rng)
+
+    assert (run["gammas"] >= 0.2).all() and (run["gammas"] <= 1.8).all()
+    assert (run["phis"] >= 0.3).all() and (run["phis"] <= 1.2).all()
+    assert (run["decays"] >= 0.6).all() and (run["decays"] <= 0.9).all()
