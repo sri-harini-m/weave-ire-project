@@ -9,3 +9,4 @@ sentence-transformers
 
 # Simulator and recommender tests.
 pytest
+scikit-learn

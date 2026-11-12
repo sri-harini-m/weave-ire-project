@@ -84,8 +84,8 @@ def main():
                     help="Enable heterogeneous reader archetypes (cautious, explorer, easily_bored, average)")
     ap.add_argument("--uncertainty-n0", type=float, default=None,
                     help="History length uncertainty scale n0 (prior variance = s0^2 * n0 / (n0 + n))")
-    ap.add_argument("--outside-option", type=float, default=None,
-                    help="Utility threshold below which readers drop out of the session")
+    # ap.add_argument("--outside-option", type=float, default=None,
+    #                 help="Utility threshold below which readers drop out of the session")
     ap.add_argument("--no-archive", action="store_true",
                     help="skip the per-round population archives (saves a lot of disk); "
                          "summary CSVs and figures are still written")
