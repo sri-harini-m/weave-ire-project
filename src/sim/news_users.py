@@ -34,7 +34,9 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
     histories = []
     query_texts = []
     article_records = store.articles.set_index("news_id").to_dict("index")
-
+    categories = np.unique(world.cats) if world.cats is not None else np.array([])
+    category_index = {category: i for i, category in enumerate(categories)}
+    category_profiles = np.zeros((len(uids), len(categories)))
     for k, u in enumerate(uids):
         hist = store.history(u)
         histories.append(list(hist))
@@ -54,6 +56,9 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
         text = []
         for news_id in prior_hist:
             article = article_records.get(news_id, {})
+            category = article.get("category")
+            if category in category_index:
+                category_profiles[k, category_index[category]] += 1
             text.extend(article[key] for key in ("title", "abstract")
                         if isinstance(article.get(key), str))
         query_texts.append(" ".join(text))
@@ -72,6 +77,7 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
         "seen": seen,
         "histories": histories,
         "query_texts": query_texts,
+        "category_profiles": category_profiles,
         "total_qualified_users": total_qualified,
         "min_history": min_history,
         "true_history_size": true_history_size,
@@ -92,4 +98,6 @@ def sample_news_users(world, rng, U: int):
         if "true_profiles" in pool else None
     world.sampled_history_lens = pool["history_lens"][idx] \
         if "history_lens" in pool else None
+    world.sampled_category_profiles = pool["category_profiles"][idx] \
+        if "category_profiles" in pool else None
     return pool["profiles"][idx], pool["seen"][idx]

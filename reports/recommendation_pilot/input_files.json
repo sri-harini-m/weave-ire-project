@@ -1,0 +1,17 @@
+[
+  {
+    "path": "/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/data/processed/articles.csv",
+    "bytes": 20234435,
+    "sha256": "30b5fc354620d2dcbe7cc98f01cda682c97675a68806ca87e9a3bfbf51c249a3"
+  },
+  {
+    "path": "/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/data/processed/embeddings.npy",
+    "bytes": 100205696,
+    "sha256": "87eb8c73b8f1b2a8b7bd07181d84fa1160015ab26c99b3db98c3ba8517a2a7d1"
+  },
+  {
+    "path": "/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/data/processed/user_histories.json",
+    "bytes": 10754747,
+    "sha256": "64088fe4f7e52a666927467dcdfa8794755559de4cfcaf3886f6bf4de9f69c7e"
+  }
+]

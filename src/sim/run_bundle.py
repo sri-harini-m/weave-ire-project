@@ -114,7 +114,7 @@ class RunBundle:
             (self.path / name).write_text(result.stdout + result.stderr)
         source = self.path / "source"
         source.mkdir()
-        for folder in ("src", "scripts", "tests", "docs"):
+        for folder in ("src", "scripts", "tests", "docs", "configs"):
             for original in sorted((repo / folder).rglob("*")):
                 if original.is_file() and "__pycache__" not in original.parts \
                         and original.suffix in (".py", ".md", ".yaml", ".json"):

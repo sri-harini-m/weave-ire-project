@@ -4,10 +4,12 @@ Arrays use NPZ without pickle. JSON stores schemas and metadata. Hidden simulato
 values are saved separately from observable recommender inputs.
 """
 from datetime import datetime, timezone
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from time import perf_counter
 
@@ -108,6 +110,26 @@ def save_world(world, path):
                               "article_metadata": getattr(world, "article_metadata", None)})
 
 
+def _share_world(world, source, destination):
+    """Reuse an immutable world file after checking only its saved header."""
+    if not source.is_file():
+        raise FileNotFoundError(f"Shared world archive does not exist: {source}")
+    with np.load(source, allow_pickle=False) as stored:
+        header = json.loads(str(stored["__metadata__"]))
+    if header.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("Unsupported shared world archive schema")
+    if header.get("metadata", {}).get("digest") != world_digest(world):
+        raise ValueError("Shared world archive does not match the supplied catalogue")
+    try:
+        os.link(source, destination)
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+        # Exclusive creation retains the same no-overwrite guarantee across filesystems.
+        with source.open("rb") as incoming, destination.open("xb") as outgoing:
+            shutil.copyfileobj(incoming, outgoing)
+
+
 def load_world(path):
     path = Path(path)
     if path.is_dir():
@@ -142,7 +164,8 @@ def save_checkpoint(rec, path):
         raise ValueError("Unsupported random bit generator")
     metadata = {"algorithm": rec.name, "settings": _model_settings(rec),
                 "U": rec.U, "world_digest": world_digest(rec.world),
-                "rng": rec.rng.bit_generator.state}
+                "rng": rec.rng.bit_generator.state,
+                "privileged_reference": rec.name == "ideal"}
     if rec.name == "bm25":
         metadata["article_text_digest"] = hashlib.sha256(
             _json_text(rec.world.article_metadata).encode()).hexdigest()
@@ -152,6 +175,15 @@ def save_checkpoint(rec, path):
 
 def load_checkpoint(path, world):
     """Restore one known algorithm without importing arbitrary classes."""
+    path = Path(path)
+    if not path.is_file():
+        metadata_path = path.parent.parent / "metadata.json"
+        policy = None
+        if metadata_path.is_file():
+            policy = json.loads(metadata_path.read_text(encoding="utf-8")).get("archive", {}).get(
+                "snapshot_policy")
+        policy_note = f"; snapshot_policy={policy!r}" if policy is not None else ""
+        raise FileNotFoundError(f"Checkpoint was not saved: {path}{policy_note}")
     values, metadata = _read_npz(path)
     if metadata["world_digest"] != world_digest(world):
         raise ValueError("Checkpoint world does not match the supplied catalogue")
@@ -192,16 +224,32 @@ def load_state(population_path, t, world=None):
 class PopulationArchive:
     """Flush one population's inputs, model snapshots, and responses per round.
 
-    This stores enough data to recompute reports and reproduce recommendations.
-    It is not a simulator-resume implementation.
+    Every policy retains observable round inputs and responses for reports.
+    `all` also saves every model state for recommendation replay. `final` saves
+    only the final model, and `none` saves no models. Optional hidden diagnostics
+    are controlled separately. This is not a simulator-resume implementation.
     """
 
-    def __init__(self, path, metadata=None):
+    def __init__(self, path, metadata=None, snapshot_policy="all", diagnostics=True,
+                 shared_world_path=None):
+        if snapshot_policy not in ("all", "final", "none"):
+            raise ValueError("snapshot_policy must be 'all', 'final', or 'none'")
+        if not isinstance(diagnostics, bool):
+            raise ValueError("diagnostics must be a boolean")
+        self.snapshot_policy = snapshot_policy
+        self.diagnostics = diagnostics
+        self.shared_world_path = Path(shared_world_path).resolve() \
+            if shared_world_path is not None else None
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=False)
         (self.path / "models").mkdir()
         (self.path / "rounds").mkdir()
-        self.metadata = metadata or {}
+        self.metadata = dict(metadata or {})
+        self.metadata["archive"] = {
+            "snapshot_policy": snapshot_policy, "diagnostics": diagnostics,
+        }
+        if self.shared_world_path is not None:
+            self.metadata["archive"]["shared_world_reference"] = str(self.shared_world_path)
         self.started = False
         self.finished = False
         self._pending = None
@@ -218,6 +266,8 @@ class PopulationArchive:
                     "created_utc": self._created,
                     "updated_utc": datetime.now(timezone.utc).isoformat(),
                     "rounds_saved": self._rounds,
+                    "snapshot_policy": self.snapshot_policy,
+                    "diagnostics": self.diagnostics,
                     "elapsed_seconds": perf_counter() - self._clock, **extra}
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path,
                                          prefix=".status-", delete=False) as stream:
@@ -237,7 +287,10 @@ class PopulationArchive:
         if self.started or self.finished:
             raise ValueError("Population archive already started or closed")
         self.world, self._rec = world, rec
-        save_world(world, self.path / "world.npz")
+        if self.shared_world_path is None:
+            save_world(world, self.path / "world.npz")
+        else:
+            _share_world(world, self.shared_world_path, self.path / "world.npz")
         _write_json(self.path / "world.json", {"N": world.N, "rho": world.rho,
                     "unit": world.unit, "kind": world.kind,
                     "digest": world_digest(world)})
@@ -251,9 +304,11 @@ class PopulationArchive:
         _write_npz(self.path / "initial_observable.npz", observable,
                    {"profiles_present": profiles is not None, "seen_present": seen is not None,
                     "U": rec.U, "rng": rng.bit_generator.state})
-        _write_npz(self.path / "initial_hidden.npz", initial,
-                   {"purpose": "Simulator diagnostics only; never recommender inputs"})
-        save_checkpoint(rec, self.path / "models" / "initial.npz")
+        if self.diagnostics:
+            _write_npz(self.path / "initial_hidden.npz", initial,
+                       {"purpose": "Simulator diagnostics only; never recommender inputs"})
+        if self.snapshot_policy == "all":
+            save_checkpoint(rec, self.path / "models" / "initial.npz")
         self.started = True
         self._status("running")
 
@@ -265,25 +320,38 @@ class PopulationArchive:
         prefix = self.path / "rounds" / f"round_{state.t:04d}_input"
         arrays = {"available": state.available, "active": state.active,
                   "ratings": state.ratings, "profiles": state.extra.get("profiles")}
-        arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
+        if self.diagnostics:
+            arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
         _write_npz(prefix.with_suffix(".npz"), arrays)
         _write_json(prefix.with_suffix(".json"), {"t": state.t, "history": state.history,
                     "extra": {k: v for k, v in state.extra.items() if k != "profiles"}})
-        save_checkpoint(rec, self.path / "models" / f"before_{state.t:04d}.npz")
+        if self.snapshot_policy == "all":
+            save_checkpoint(rec, self.path / "models" / f"before_{state.t:04d}.npz")
         self._pending = state.t
         self._rec = rec
 
-    def after_round(self, t, slates, users, items, feedback, rec, diagnostics=None):
+    def after_round(self, t, slates, users, items, feedback, rec, diagnostics=None,
+                    signals=None):
         if self.finished or self._pending != t:
             raise ValueError("Output must match the pending archived round")
+        signals = self._feedback_signals(signals, users, rec.U)
         arrays = {"slates": np.empty((rec.U, 0), dtype=int) if slates is None else slates,
                   "slate_is_none": slates is None, "users": users, "items": items,
                   "feedback": feedback}
-        arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
+        if self.diagnostics:
+            arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
+        elif diagnostics is not None and "recommendation_seconds" in diagnostics:
+            seconds = np.asarray(diagnostics["recommendation_seconds"])
+            if seconds.ndim != 0 or not np.isfinite(seconds) or seconds < 0:
+                raise ValueError("recommendation_seconds must be a finite nonnegative scalar")
+            arrays["diagnostic_recommendation_seconds"] = seconds
+        arrays.update({f"feedback_{key}": value for key, value in signals.items()})
         _write_npz(self.path / "rounds" / f"round_{t:04d}_output.npz", arrays)
-        save_checkpoint(rec, self.path / "models" / f"after_{t:04d}.npz")
+        if self.snapshot_policy == "all":
+            save_checkpoint(rec, self.path / "models" / f"after_{t:04d}.npz")
         response = {"t": t, "slate_is_none": slates is None, "slates": slates,
-                    "users": users, "items": items, "feedback": feedback}
+                    "users": users, "items": items, "feedback": feedback,
+                    "signals": signals}
         with (self.path / "responses.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(_jsonable(response), allow_nan=False) + "\n")
             stream.flush()
@@ -296,8 +364,11 @@ class PopulationArchive:
     def finish(self, run):
         if not self.started or self.finished or self._pending is not None:
             raise ValueError("Cannot finish an unstarted, incomplete, or closed archive")
-        _write_npz(self.path / "run.npz", run)
-        save_checkpoint(self._rec, self.path / "models" / "final.npz")
+        saved_run = run if self.diagnostics else {
+            key: value for key, value in run.items() if key not in ("X", "V")}
+        _write_npz(self.path / "run.npz", saved_run)
+        if self.snapshot_policy != "none":
+            save_checkpoint(self._rec, self.path / "models" / "final.npz")
         from .metrics import time_curves, user_metrics
         user_metrics(self.world, run).to_csv(self.path / "user_metrics.csv", index=False)
         curves = time_curves(self.world, run).reindex(
@@ -305,6 +376,29 @@ class PopulationArchive:
         curves.to_csv(self.path / "curves.csv", index=False)
         self.finished = True
         self._status("complete")
+
+    @staticmethod
+    def _feedback_signals(signals, users, U):
+        """Keep coarse observed boredom and departure feedback separate from diagnostics."""
+        if signals is None:
+            return {}
+        unknown = set(signals) - {"boredom", "left_users"}
+        if unknown:
+            raise ValueError("Unsupported observed feedback signals: " + ", ".join(sorted(unknown)))
+        saved = {}
+        if "boredom" in signals:
+            boredom = np.asarray(signals["boredom"])
+            if boredom.shape != (len(users),) or not np.isin(boredom, (0, 1)).all():
+                raise ValueError("boredom must contain one 0/1 flag per observed read")
+            saved["boredom"] = boredom.astype(np.int8)
+        if "left_users" in signals:
+            left_users = np.asarray(signals["left_users"])
+            if left_users.ndim != 1 or (left_users.size and (
+                    not np.issubdtype(left_users.dtype, np.integer)
+                    or (left_users < 0).any() or (left_users >= U).any())):
+                raise ValueError("left_users must contain reader indices in [0, U)")
+            saved["left_users"] = left_users.astype(int)
+        return saved
 
     def fail(self, error):
         if self.finished:

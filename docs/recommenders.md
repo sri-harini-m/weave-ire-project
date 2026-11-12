@@ -1,4 +1,8 @@
-# Person B: recommender inputs and implementation
+# Recommender inputs and implementation
+
+For report-ready descriptions of all twelve current methods, see
+[recommender_report_descriptions.md](recommender_report_descriptions.md).
+The [study notes](recommendation_study.md) cover the newer variants and history controls.
 
 See [report_artifacts.md](report_artifacts.md) for saved models, responses, logs,
 metrics, figures, and rebuilding reports without another simulation.

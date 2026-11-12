@@ -36,6 +36,7 @@ class Params:
     # inside the simulation. True = "returning user": recommenders also see each
     # reader's real MIND history (profile vector and past-click text).
     reader_history_visible: bool = False
+    boredom_threshold: float = 0.25  # coarse self-report: penalty exceeds this threshold
 
     # ---- News-only options -----------------------------------------------
     common_from_popularity: bool = False  # shift V's mean by real popularity
@@ -44,6 +45,10 @@ class Params:
         if self.sigma_i is None:
             self.sigma_i = self.sigma
         assert self.info in ("none", "rec", "oracle"), self.info
+        if not isinstance(self.reader_history_visible, bool):
+            raise ValueError("reader_history_visible must be boolean")
+        if not 0 <= self.boredom_threshold < float("inf"):
+            raise ValueError("boredom_threshold must be finite and nonnegative")
 
     def as_dict(self) -> dict:
         return asdict(self)

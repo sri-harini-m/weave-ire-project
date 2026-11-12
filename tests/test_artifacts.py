@@ -38,6 +38,8 @@ def test_checkpoint_reproduces_recommendations_and_learning(tmp_path, name):
     state = state_fixture(world)
     rec = REGISTRY[name](K=3)
     rec.reset(world, 2, np.random.default_rng(42))
+    if getattr(rec, "reference_only", False):
+        rec.set_reference_values(np.arange(8).reshape(2, 4))
     rec.observe(state, np.array([0, 1]), np.array([2, 2]), np.array([-1., 2.]))
     path = tmp_path / "model.npz"
     save_checkpoint(rec, path)

@@ -21,7 +21,7 @@ import numpy as np
 from time import perf_counter
 
 from .params import Params
-from .recommenders import NoRecommender, Recommender, SimState
+from .recommenders import IdealRecommender, NoRecommender, Recommender, SimState
 from .users import Beliefs, Population
 from .world import World
 
@@ -45,6 +45,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                    profiles: np.ndarray | None = None,
                    seen: np.ndarray | None = None,
                    recorder=None, query_texts=None,
+                   category_profiles: np.ndarray | None = None,
                    true_profiles: np.ndarray | None = None,
                    history_lens: np.ndarray | None = None) -> dict:
     if true_profiles is None and profiles is not None:
@@ -55,12 +56,19 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
         cand = getattr(world, "sampled_history_lens", None)
         if cand is not None and len(cand) == U:
             history_lens = cand
+    if category_profiles is None and profiles is not None:
+        cand = getattr(world, "sampled_category_profiles", None)
+        if cand is not None and len(cand) == U:
+            category_profiles = cand
 
     pop = Population(world, p, U, rng, profiles=profiles, seen=seen,
                      true_profiles=true_profiles, history_lens=history_lens)
     bel = Beliefs(world, pop, p)
     rec = recommender or NoRecommender()
     rec.reset(world, U, rng)
+    # Privileged reference only: ordinary state objects never contain X or V.
+    if type(rec) is IdealRecommender:
+        rec.set_reference_values(pop.X)
 
     gammas = pop.gammas
     phis = pop.phis
@@ -80,8 +88,9 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
     left_at = np.full(U, T)                  # round at which the user left
 
     if recorder is not None:
-        recorder.start(world, p, rec, rng, profiles, consumed,
-                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
+        recorder.start(world, p, rec, rng, profiles if p.reader_history_visible else None, consumed,
+                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar,
+                        "latent_profiles": profiles})
 
     for t in range(T):
         # Readers' real MIND history reaches recommenders only in the
@@ -92,6 +101,8 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
                 extra["profiles"] = profiles
             if query_texts is not None:
                 extra["query_texts"] = query_texts
+            if category_profiles is not None:
+                extra["category_profiles"] = category_profiles
         state = SimState(world, t, ~consumed, history, ratings, active.copy(),
                          extra=extra)
         if recorder is not None:
@@ -113,7 +124,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
             allowed &= mask
         score = np.where(allowed, score, -np.inf)
 
-        users, items, fb = [], [], []
+        users, items, fb, bored, left_users = [], [], [], [], []
         for i in np.flatnonzero(active):
             n = int(np.argmax(score[i]))
             if not np.isfinite(score[i, n]):
@@ -121,6 +132,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
             if p.outside_option is not None and score[i, n] < p.outside_option:
                 active[i] = False
                 left_at[i] = t
+                left_users.append(i)
                 continue
             penalty = phis[i] * F[i, n]
             seq[i, t], val[i, t], pen[i, t] = n, pop.X[i, n], penalty
@@ -129,20 +141,29 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
             ratings[i, n] = pop.X[i, n] - penalty
             bel.observe(i, n)                # learning spillovers
             users.append(i); items.append(n); fb.append(ratings[i, n])
+            # Observable coarse self-report; raw latent fatigue is not exposed.
+            bored.append(float(penalty > p.boredom_threshold))
 
         if Kf is not None:                   # fatigue decays, then builds up
             F *= decays[:, None]
             if users:
                 F[users] += Kf[items]
-        if users:
-            rec.observe(state, np.array(users), np.array(items), np.array(fb))
+        user_array, item_array = np.array(users, dtype=int), np.array(items, dtype=int)
+        feedback_array = np.array(fb, dtype=float)
+        signals = {"boredom": np.array(bored, dtype=float),
+                   "left_users": np.array(left_users, dtype=int)}
+        if getattr(rec, "accepts_feedback_signals", False):
+            rec.observe(state, user_array, item_array, feedback_array, signals=signals)
+        elif users:
+            rec.observe(state, user_array, item_array, feedback_array)
         if recorder is not None:
             recorder.after_round(t, slates, np.array(users, dtype=int),
                                  np.array(items, dtype=int), np.array(fb, dtype=float), rec,
                                  {"choice_scores": score, "active_after": active,
                                   "fatigue_after": F, "belief_mean_after": bel.mean,
                                   "belief_variance_after": bel.var,
-                                  "recommendation_seconds": recommendation_seconds})
+                                  "recommendation_seconds": recommendation_seconds},
+                                 signals=signals)
 
     run = {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
            "X": pop.X, "V": pop.V, "reader_types": pop.reader_types,

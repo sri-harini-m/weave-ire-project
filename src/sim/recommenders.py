@@ -7,8 +7,9 @@ slate of K items per user, and the user picks the best item in the slate
 according to their own beliefs.
 
 To add a recommender, subclass Recommender and implement `recommend`
-(and `observe` if it learns from feedback). Everything the recommender is
-allowed to see is in SimState: it never sees users' true values.
+(and `observe` if it learns from feedback). Ordinary recommenders only use
+observable SimState inputs. The ideal reference receives privileged values
+through a separate setter, never through the shared state.
 """
 from dataclasses import dataclass, field
 from collections import Counter
@@ -494,7 +495,325 @@ class MatrixFactorizationRecommender(PopularityRecommender):
             setattr(self, name, float(array) if name == "global_mean" else array)
 
 
+def _bounded_weight(value, name):
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real) \
+            or not np.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError(f"{name} must be finite and in [0, 1]")
+    return value
+
+
+def _category_info(world, required=True):
+    if world.cats is None:
+        if required and world.N:
+            raise ValueError("This recommender requires world.cats with shape [N]")
+        return np.empty(0, dtype=int), np.full(world.N, -1, dtype=int)
+    cats = np.asarray(world.cats)
+    if cats.shape != (world.N,) or any(value is None or
+            isinstance(value, (float, np.floating)) and not np.isfinite(value) for value in cats):
+        raise ValueError("world.cats must contain one nonmissing category per article")
+    return np.unique(cats, return_inverse=True)
+
+
+class IdealRecommender(Recommender):
+    """Privileged reference ranking by true gross utility, supplied separately.
+
+    This does not guarantee the highest realized net welfare: readers still
+    choose within the returned slate and can experience fatigue.
+    """
+    name = "ideal"
+    reference_only = True
+
+    def __init__(self, K: int = 10, reference_only: bool = True):
+        super().__init__(K)
+        if reference_only is not True:
+            raise ValueError("ideal is a privileged reference_only recommender")
+        self.reference_only = reference_only
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self._reference_values = None
+
+    def set_reference_values(self, values):
+        values = np.asarray(values, dtype=float)
+        if values.shape != (self.U, self.world.N) or not np.isfinite(values).all():
+            raise ValueError("Reference values must be finite with shape [U, N]")
+        self._reference_values = values.copy()
+
+    def recommend(self, state):
+        if self._reference_values is None:
+            raise ValueError("ideal requires set_reference_values() after reset")
+        return self.top_k(self._reference_values, self.eligible(state))
+
+    def model_state(self):
+        return {} if self._reference_values is None \
+            else {"reference_values": self._reference_values.copy()}
+
+    def restore_model_state(self, values):
+        if not values:
+            self._reference_values = None
+        elif set(values) == {"reference_values"}:
+            self.set_reference_values(values["reference_values"])
+        else:
+            raise ValueError("ideal state only accepts reference_values")
+
+
+class CalibratedRecommender(ContentBasedRecommender):
+    """Greedy relevance and calibration to an observable category distribution.
+
+    The target combines visible `extra['category_profiles']` raw counts and
+    simulated reads. With no counts it uses the catalogue's category mix.
+    Candidate score is (1-w)*relevance - w*KL(target || .99*slate_mix+.01*target).
+    Within each category, only the most relevant remaining candidate needs to
+    be considered because its calibration term is shared by that category.
+    """
+    name = "calibrated"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0,
+                 profile_weight: float = 1.0, calibration_weight: float = 0.5):
+        super().__init__(K, prior_weight, profile_weight)
+        self.calibration_weight = _bounded_weight(calibration_weight, "calibration_weight")
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self.category_labels, self.article_categories = _category_info(
+            world, required=self.calibration_weight > 0)
+
+    def target_distribution(self, state):
+        C = len(self.category_labels)
+        counts = np.zeros((self.U, C))
+        profiles = state.extra.get("category_profiles")
+        if profiles is not None:
+            profiles = np.asarray(profiles, dtype=float)
+            if profiles.shape != (self.U, C) or not np.isfinite(profiles).all() \
+                    or (profiles < 0).any():
+                raise ValueError("category_profiles must be finite nonnegative counts with shape [U, C]")
+            counts += profiles
+        if len(state.history) != self.U:
+            raise ValueError("history must contain one list per user")
+        for user, history in enumerate(state.history):
+            if not len(history):
+                continue
+            idx = np.asarray(history)
+            if idx.ndim != 1 or not np.issubdtype(idx.dtype, np.integer) \
+                    or (idx < 0).any() or (idx >= self.world.N).any():
+                raise ValueError("history must contain catalogue indices in [0, N)")
+            if C:
+                counts[user] += np.bincount(self.article_categories[idx], minlength=C)
+        totals = counts.sum(axis=1, keepdims=True)
+        target = counts / np.where(totals > 0, totals, 1)
+        if C:
+            catalogue = np.bincount(self.article_categories, minlength=C).astype(float)
+            target[totals[:, 0] == 0] = catalogue / catalogue.sum()
+        return target
+
+    def recommend(self, state):
+        if self.calibration_weight == 0:
+            return super().recommend(state)
+        available = self.eligible(state)
+        relevance = self.relevance(state)
+        target = self.target_distribution(state)
+        out = self.top_k(relevance, available)
+        C = len(self.category_labels)
+        for user in np.flatnonzero(available.sum(axis=1) > self.K):
+            order = np.argsort(-relevance[user], kind="stable") \
+                if self.calibration_weight < 1 else np.arange(self.world.N)
+            order = order[available[user, order]]
+            groups = [order[self.article_categories[order] == category] for category in range(C)]
+            pointers = np.zeros(C, dtype=int)
+            selected = np.zeros(C)
+            positive = target[user] > 0
+            for k in range(self.K):
+                best_item, best_category, best_score = None, None, -np.inf
+                for category, candidates in enumerate(groups):
+                    if pointers[category] == len(candidates):
+                        continue
+                    item = int(candidates[pointers[category]])
+                    mix = selected.copy()
+                    mix[category] += 1
+                    mix /= k + 1
+                    smoothed = .99 * mix + .01 * target[user]
+                    kl = np.sum(target[user, positive] *
+                                np.log(target[user, positive] / smoothed[positive]))
+                    score = (1 - self.calibration_weight) * relevance[user, item] \
+                        - self.calibration_weight * kl
+                    if score > best_score or score == best_score \
+                            and (best_item is None or item < best_item):
+                        best_item, best_category, best_score = item, category, score
+                if best_item is None:
+                    break
+                out[user, k] = best_item
+                selected[best_category] += 1
+                pointers[best_category] += 1
+        return out
+
+
+class _ObservableFatigueSignals:
+    """Shared validation and storage for opted-in observable feedback only."""
+    accepts_feedback_signals = True
+
+    def _reset_signals(self):
+        self.departed_users = np.zeros(self.U, dtype=bool)
+
+    def _feedback_inputs(self, users, items, feedback, signals):
+        users, items = np.asarray(users), np.asarray(items)
+        try:
+            if np.iscomplexobj(feedback):
+                raise ValueError("Feedback utilities must be real")
+            feedback = np.asarray(feedback, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError("feedback must contain finite real utilities") from error
+        if users.ndim != 1 or items.ndim != 1 or feedback.ndim != 1 \
+                or users.shape != items.shape or users.shape != feedback.shape \
+                or not np.isfinite(feedback).all():
+            raise ValueError("Feedback arrays must be aligned, one-dimensional and finite")
+        if users.size and (not np.issubdtype(users.dtype, np.integer)
+                          or not np.issubdtype(items.dtype, np.integer)
+                          or (users < 0).any() or (users >= self.U).any()
+                          or (items < 0).any() or (items >= self.world.N).any()):
+            raise ValueError("Feedback users/items must be valid integer indices")
+        if signals is None:
+            signals = {}
+        if not isinstance(signals, dict) or set(signals) - {"boredom", "left_users"}:
+            raise ValueError("signals only accepts boredom and left_users")
+        boredom = np.asarray(signals.get("boredom", np.zeros(users.size)), dtype=float)
+        if boredom.shape != users.shape or not np.isfinite(boredom).all() \
+                or not np.isin(boredom, [0, 1]).all():
+            raise ValueError("boredom must be aligned binary observations")
+        left = np.asarray(signals.get("left_users", []))
+        if left.ndim != 1 or left.size and (not np.issubdtype(left.dtype, np.integer)
+                or (left < 0).any() or (left >= self.U).any()):
+            raise ValueError("left_users must contain valid user indices")
+        return users.astype(int), items.astype(int), feedback, boredom, left.astype(int)
+
+    def model_state(self):
+        values = super().model_state()
+        values["departed_users"] = self.departed_users.copy()
+        return values
+
+    def restore_model_state(self, values):
+        values = dict(values)
+        departed = np.asarray(values.pop("departed_users", None))
+        if departed.shape != (self.U,) or departed.dtype != bool:
+            raise ValueError("departed_users must be a boolean array with shape [U]")
+        super().restore_model_state(values)
+        self.departed_users = departed.copy()
+
+
+class FatiguePopularityRecommender(_ObservableFatigueSignals, PopularityRecommender):
+    """Downweight read counts when a consumed article produces reported boredom."""
+    name = "fatigue_popularity"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0, fatigue_weight: float = 1.0):
+        super().__init__(K, prior_weight)
+        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self._reset_signals()
+
+    def observe(self, state, users, items, feedback, signals=None):
+        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
+        np.add.at(self.counts, items, 1 - self.fatigue_weight * boredom)
+        self.departed_users[left] = True
+
+
+class FatigueMFRecommender(_ObservableFatigueSignals, MatrixFactorizationRecommender):
+    """Fit net utility minus a coarse reported-boredom penalty using observed reads."""
+    name = "fatigue_mf"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
+                 regularization: float = 1.0, iterations: int = 3,
+                 fatigue_weight: float = 1.0):
+        super().__init__(K, prior_weight, factors, regularization, iterations)
+        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self._reset_signals()
+
+    def observe(self, state, users, items, feedback, signals=None):
+        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
+        adjusted = feedback - self.fatigue_weight * boredom
+        for user, item, rating in zip(users, items, adjusted):
+            self.observed_ratings[user, item] = rating
+        np.add.at(self.counts, items, 1 - self.fatigue_weight * boredom)
+        if users.size:
+            self._fit()
+        self.departed_users[left] = True
+
+
+class FatigueContentRecommender(_ObservableFatigueSignals, ContentBasedRecommender):
+    """Penalize recently consumed categories using only observable reading/boredom.
+
+    Per-category recent counts decay once per elapsed round. A read adds
+    1+boredom to its category. Relevance subtracts fatigue_weight times recent
+    category load / (1 + total load), so empty-round decay also reduces penalties.
+    The ordinary content profile/history calculation is retained.
+    """
+    name = "fatigue_content"
+
+    def __init__(self, K: int = 10, prior_weight: float = 1.0,
+                 profile_weight: float = 1.0, fatigue_weight: float = 1.0,
+                 decay: float = 0.8):
+        super().__init__(K, prior_weight, profile_weight)
+        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
+        self.decay = _bounded_weight(decay, "decay")
+
+    def reset(self, world, U, rng):
+        super().reset(world, U, rng)
+        self._reset_signals()
+        self.category_labels, self.article_categories = _category_info(
+            world, required=self.fatigue_weight > 0)
+        self.recent_category_counts = np.zeros((U, len(self.category_labels)))
+        self.last_round = -1
+
+    def _advance(self, t):
+        if isinstance(t, (bool, np.bool_)) or not isinstance(t, (int, np.integer)) \
+                or t < 0 or t < self.last_round:
+            raise ValueError("state.t must be a nonnegative nondecreasing integer")
+        if t > self.last_round:
+            self.recent_category_counts *= self.decay ** (t - self.last_round)
+            self.last_round = int(t)
+
+    def relevance(self, state):
+        base = super().relevance(state)
+        self._advance(state.t)
+        if self.fatigue_weight == 0 or not len(self.category_labels):
+            return base
+        normalized = self.recent_category_counts / (1 + self.recent_category_counts.sum(axis=1, keepdims=True))
+        return base - self.fatigue_weight * normalized[:, self.article_categories]
+
+    def observe(self, state, users, items, feedback, signals=None):
+        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
+        self._advance(state.t)
+        np.add.at(self.counts, items, 1.0)
+        if len(self.category_labels):
+            np.add.at(self.recent_category_counts, (users, self.article_categories[items]), 1 + boredom)
+        self.departed_users[left] = True
+
+    def model_state(self):
+        values = super().model_state()
+        values.update(recent_category_counts=self.recent_category_counts.copy(),
+                      last_round=np.asarray(self.last_round))
+        return values
+
+    def restore_model_state(self, values):
+        values = dict(values)
+        recent = np.asarray(values.pop("recent_category_counts", None), dtype=float)
+        last = np.asarray(values.pop("last_round", None))
+        if recent.shape != (self.U, len(self.category_labels)) or not np.isfinite(recent).all() \
+                or (recent < 0).any() or last.shape != () \
+                or not np.issubdtype(last.dtype, np.integer) or last < -1:
+            raise ValueError("Invalid recent category counts or last_round in fatigue content state")
+        super().restore_model_state(values)
+        self.recent_category_counts = recent.copy()
+        self.last_round = int(last)
+
+
 REGISTRY = {"none": NoRecommender, "random": RandomRecommender,
             "popularity": PopularityRecommender, "content": ContentBasedRecommender,
             "mmr": MMRRecommender, "bm25": BM25Recommender,
-            "mf": MatrixFactorizationRecommender}
+            "mf": MatrixFactorizationRecommender, "ideal": IdealRecommender,
+            "calibrated": CalibratedRecommender,
+            "fatigue_popularity": FatiguePopularityRecommender,
+            "fatigue_mf": FatigueMFRecommender, "fatigue_content": FatigueContentRecommender}
