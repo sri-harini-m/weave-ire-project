@@ -1,13 +1,3 @@
-"""Real MIND users for the news simulation.
-
-We pre-compute, once, a pool of real users:
-    profile  = mean embedding of everything they clicked in MIND (full 384-dim)
-    seen     = which catalogue articles they already read (they can't reread)
-Each population then samples U users from this pool.
-
-The pool is attached to the World object so it is shared with worker
-processes without being copied for every job.
-"""
 import numpy as np
 
 
@@ -19,7 +9,7 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
     uids = [u for u in all_uids if len(store.history(u)) >= min_history]
     total_qualified = len(uids)
     if not uids:
-        # Fallback to all users if min_history threshold is higher than available data
+
         uids = list(all_uids)
         total_qualified = len(uids)
 
@@ -41,7 +31,7 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
         hist = store.history(u)
         histories.append(list(hist))
 
-        # Split history: earlier clicks -> prior belief, last N clicks -> true taste
+
         if len(hist) > true_history_size:
             prior_hist = hist[:-true_history_size]
             true_hist = hist[-true_history_size:]
@@ -70,7 +60,7 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
 
     world.user_pool = {
         "ids": np.array(uids),
-        "profiles": prior_profiles,  # default visible profile is prior profile
+        "profiles": prior_profiles,
         "prior_profiles": prior_profiles,
         "true_profiles": true_profiles,
         "history_lens": history_lens,
@@ -86,7 +76,7 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
 
 
 def sample_news_users(world, rng, U: int):
-    """users_fn for run_grid: returns (profiles [U, dim], seen [U, N])."""
+
     pool = world.user_pool
     idx = rng.choice(len(pool["ids"]), size=U, replace=False)
     world.sampled_user_ids = pool["ids"][idx].tolist()

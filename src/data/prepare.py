@@ -1,9 +1,3 @@
-"""Prepare processed MIND data:
-1. Merge news articles from train and dev (deduplicated).
-2. Calculate article popularity based on train impressions.
-3. Compute embeddings using SentenceTransformer (all-MiniLM-L6-v2), normalized.
-4. Extract user histories (>= min_history clicks, chronological).
-"""
 import argparse
 import json
 from collections import Counter, defaultdict
@@ -21,7 +15,7 @@ def load_news(raw_dir: Path) -> pd.DataFrame:
                              names=cols, quoting=3, dtype=str)
     dev_news = pd.read_csv(raw_dir / "dev" / "news.tsv", sep="\t", header=None,
                            names=cols, quoting=3, dtype=str)
-    # Combine and drop duplicates (train preferred)
+
     combined = pd.concat([train_news, dev_news], ignore_index=True)
     combined = combined.drop_duplicates(subset=["news_id"], keep="first").reset_index(drop=True)
     combined["title"] = combined["title"].fillna("")
@@ -32,7 +26,7 @@ def load_news(raw_dir: Path) -> pd.DataFrame:
 
 
 def compute_popularity(raw_dir: Path, articles: pd.DataFrame) -> np.ndarray:
-    """Popularity = log(1 + clicks in train impressions), scaled to [0, 1]."""
+
     clicks = Counter()
     behaviors_path = raw_dir / "train" / "behaviors.tsv"
     with open(behaviors_path, "r", encoding="utf-8") as f:
@@ -53,34 +47,32 @@ def compute_popularity(raw_dir: Path, articles: pd.DataFrame) -> np.ndarray:
 
 
 def extract_user_histories(raw_dir: Path, valid_news_ids: set[str], min_history: int = 10) -> dict[str, list[str]]:
-    """Build user histories: pre-period history followed by train week clicks in time order."""
+
     behaviors_path = raw_dir / "train" / "behaviors.tsv"
-    
-    # Read behaviors to get pre-period history and session clicks ordered by time
+
+
     user_initial_history = {}
     user_session_clicks = defaultdict(list)
     rows = []
-    
+
     with open(behaviors_path, "r", encoding="utf-8") as f:
         for line in f:
             parts = line.strip().split("\t")
             if len(parts) >= 5:
-                # 0: imp_id, 1: uid, 2: time, 3: history, 4: impressions
+
                 uid = parts[1]
                 time_str = parts[2]
                 hist_str = parts[3]
                 imp_str = parts[4]
                 rows.append((uid, time_str, hist_str, imp_str))
 
-    # Sort rows by time_str
-    # Standard MIND date format: MM/DD/YYYY H:MM:SS AM/PM
-    # Python can sort or parse; but simple chronological order by parsing or keeping order
+
     for uid, time_str, hist_str, imp_str in rows:
         if uid not in user_initial_history:
             pre_clicks = [nid for nid in hist_str.split() if nid in valid_news_ids]
             user_initial_history[uid] = pre_clicks
 
-        # Clicks from impressions in this behavior
+
         for imp in imp_str.split():
             if imp.endswith("-1"):
                 nid = imp[:-2]
@@ -89,7 +81,7 @@ def extract_user_histories(raw_dir: Path, valid_news_ids: set[str], min_history:
 
     final_histories = {}
     for uid, pre in user_initial_history.items():
-        # Append session clicks
+
         full_seq = list(pre) + user_session_clicks[uid]
         if len(full_seq) >= min_history:
             final_histories[uid] = full_seq
@@ -113,7 +105,7 @@ def compute_embeddings(articles: pd.DataFrame, model_name: str, batch_size: int 
     from sentence_transformers import SentenceTransformer
     print(f"Loading embedding model: {model_name} (using {num_threads} torch threads)...")
     model = SentenceTransformer(model_name)
-    
+
     texts = []
     for title, abstract in zip(articles["title"], articles["abstract"]):
         t = str(title).strip()

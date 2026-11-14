@@ -1,8 +1,3 @@
-"""Save a synthetic report bundle, or rebuild figures from an existing archive.
-
-Synthetic results verify the pipeline. They are not evidence about MIND users.
-Use run_news.py for the real-data comparison after the data pipeline is supplied.
-"""
 import argparse
 import sys
 from functools import partial

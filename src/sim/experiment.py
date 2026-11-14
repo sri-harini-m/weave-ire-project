@@ -1,9 +1,3 @@
-"""Run many populations over a parameter grid and collect results.
-
-Output (one row per population, metrics averaged over its users):
-    params..., recommender, pop, local_distance, diversity, welfare,
-    welfare_net, fatigue, rounds, [cat_entropy, n_categories], homogeneity
-"""
 import itertools
 import json
 import zlib
@@ -84,14 +78,8 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
              U: int = 100, seed: int = 0, recommenders: dict | None = None,
              users_fn=None, workers: int = 1, keep_curves: bool = False,
              archive_dir=None, slate_sizes=None, snapshot_policy="all", diagnostics=True):
-    """world_fn(rho) -> World (rebuilt only when rho changes).
-    grid: {param_name: [values]}; base: fixed Params overrides.
-    recommenders: {name: factory()} or None for the paper's no-slate setup.
-    users_fn(world, rng) -> (profiles, seen) for grounded news users, or None.
-    With workers > 1, recommender factories and users_fn must be top-level
-    functions/classes (or functools.partial of them), not lambdas.
-    archive_dir: optional unique run directory for all population artifacts.
-    """
+
+
     base = base or {}
     if snapshot_policy not in ("all", "final", "none"):
         raise ValueError("snapshot_policy must be all, final or none")
@@ -111,9 +99,8 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
             from functools import partial
             rfac = partial(factory, K=requested_k) if factory and requested_k is not None else factory
             for k in range(n_pop):
-                # Common random numbers: the seed ignores `info` and the
-                # recommender, so every regime/recommender faces the SAME users
-                # and true values. Differences are then caused by the regime.
+
+
                 key = repr(sorted((a, b) for a, b in {**pdict, "rho": rho}.items()
                                   if a not in ("info", "reader_history_visible", "boredom_threshold")))
                 s = seed * 1_000_003 + zlib.crc32(key.encode()) % 100_000 * 1000 + k
@@ -154,7 +141,7 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
 
 
 def summarise(df: pd.DataFrame, by: list[str], metrics: list[str]) -> pd.DataFrame:
-    """Mean and 95% CI (normal approx over populations) per group."""
+
     g = df.groupby(by)[metrics]
     m, s, n = g.mean(), g.std(), g.count()
     ci = 1.96 * s / np.sqrt(n)

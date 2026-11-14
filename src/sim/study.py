@@ -1,4 +1,3 @@
-"""Shared command-line controls and exact experiment comparison exports."""
 from functools import partial
 import json
 
@@ -61,7 +60,7 @@ def factories(names, settings, mmr_weights=None):
 
 
 def write_comparisons(root):
-    """Copy exact condition rows into targeted tables without pooling settings."""
+
     frame = pd.read_csv(root / "report" / "summary.csv")
     tables = {
         "slate_size_comparison": frame,

@@ -1,24 +1,3 @@
-"""Metrics computed from one population run.
-
-Paper metrics (Aridor et al.):
-  local_distance   average distance between consecutively consumed items.
-                   Small = the user stays in one neighbourhood (filter bubble).
-  diversity        average pairwise distance among all items a user consumed.
-  welfare          average true value x of consumed items.
-  homogeneity      average Jaccard overlap of consumption sets between pairs
-                   of users. High = everyone consumes the same things
-                   (echo chamber / homogenisation).
-
-Our additions:
-  welfare_net      average value after fatigue (what the user actually got)
-  fatigue          average fatigue penalty paid per item
-  rounds           how many rounds before the user left (= T if they stayed)
-  cat_entropy      (news) entropy of the categories consumed, normalised to [0,1]
-  n_categories     (news) number of distinct categories consumed
-
-Distances are normalised to [0, 1] (circle: d / N, exactly as in the paper's
-diversity formula; news: embedding distance / max distance).
-"""
 import numpy as np
 import pandas as pd
 
@@ -69,12 +48,8 @@ PER_TYPE_METRICS = ("cat_entropy", "diversity", "local_distance", "welfare",
 
 
 def per_type_metrics(um: pd.DataFrame, run: dict) -> dict:
-    """Metrics averaged within each reader type, as flat columns.
 
-    Returns {"<metric>__<type>": mean, "n_readers__<type>": count,
-    "homogeneity__<type>": Jaccard within that type}. Empty when all readers
-    share one type (homogeneous populations), so old outputs are unchanged.
-    """
+
     if "reader_type" not in um.columns or um["reader_type"].nunique() < 2:
         return {}
     out = {}
@@ -90,7 +65,7 @@ def per_type_metrics(um: pd.DataFrame, run: dict) -> dict:
 
 
 def homogeneity(run: dict) -> float:
-    """Mean pairwise Jaccard index between users' consumption sets."""
+
     seq = run["seq"]
     U = seq.shape[0]
     N = max(int(seq.max()) + 1, 1)
@@ -107,7 +82,7 @@ def homogeneity(run: dict) -> float:
 
 
 def time_curves(world: World, run: dict) -> pd.DataFrame:
-    """Per-round averages, to see narrowing / fatigue build up over time."""
+
     seq, pen = run["seq"], run["pen"]
     T = seq.shape[1]
     out = []

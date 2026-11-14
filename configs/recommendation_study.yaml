@@ -1,4 +1,4 @@
-# Full study settings; CLI flags select the K and MMR sweeps.
+
 paths:
   raw_dir: data/raw
   processed_dir: data/processed

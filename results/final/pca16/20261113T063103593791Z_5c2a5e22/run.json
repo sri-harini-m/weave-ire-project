@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-11-13T06:31:03.594247+00:00",
+  "status": "complete",
+  "data_kind": "mind",
+  "arguments": {
+    "config": "configs/final/pca16.yaml",
+    "workers": 4,
+    "n_pop": null,
+    "k": null,
+    "slate_sizes": null,
+    "reader_history_visible": null,
+    "snapshot_policy": "final",
+    "archive_diagnostics": false,
+    "outside_option": null,
+    "recommenders": [
+      "none",
+      "random",
+      "popularity",
+      "content",
+      "bm25",
+      "mf",
+      "mmr",
+      "ideal"
+    ],
+    "mmr_diversity_weight": 0.6,
+    "mmr_diversity_weights": null,
+    "out": "results/final/pca16",
+    "reader_types": false,
+    "uncertainty_n0": null,
+    "no_archive": true
+  },
+  "config": {
+    "paths": {
+      "raw_dir": "data/raw",
+      "processed_dir": "data/processed"
+    },
+    "embedding": {
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "batch_size": 256
+    },
+    "users": {
+      "min_history": 10
+    },
+    "recommenders": {
+      "K": 10,
+      "prior_weight": 1.0,
+      "profile_weight": 1.0,
+      "diversity_weight": 0.3,
+      "bm25": {
+        "k1": 1.2,
+        "b": 0.75
+      },
+      "mf": {
+        "factors": 8,
+        "regularization": 1.0,
+        "iterations": 3
+      }
+    },
+    "aridor": {
+      "N": 200,
+      "T": 20,
+      "U": 100,
+      "n_pop": 20,
+      "sigma_bar": 1.0,
+      "seed": 42,
+      "reduced_grid": {
+        "rho": [
+          0.0,
+          0.1,
+          0.3,
+          0.5,
+          0.7,
+          0.9
+        ],
+        "gamma": [
+          0.0,
+          0.3,
+          1.0,
+          5.0
+        ],
+        "beta": [
+          0.0,
+          1.0,
+          5.0
+        ],
+        "sigma": [
+          1.0
+        ]
+      },
+      "full_grid": {
+        "rho": [
+          0.0,
+          0.1,
+          0.3,
+          0.5,
+          0.7,
+          0.9
+        ],
+        "gamma": [
+          0.0,
+          0.3,
+          0.6,
+          1.0,
+          5.0
+        ],
+        "beta": [
+          0.0,
+          0.4,
+          0.8,
+          1.0,
+          2.0,
+          5.0
+        ],
+        "sigma": [
+          0.25,
+          0.5,
+          1.0,
+          2.0,
+          4.0
+        ]
+      }
+    },
+    "news": {
+      "N": 500,
+      "pca_dims": 16,
+      "only_clicked": true,
+      "U": 100,
+      "n_pop": 20,
+      "T": 20,
+      "seed": 42,
+      "base": {
+        "reader_history_visible": false,
+        "sigma": 1.0,
+        "sigma_bar": 1.0,
+        "beta": 1.0,
+        "gamma": 1.0,
+        "fatigue_decay": 0.8,
+        "fatigue_rho": 0.8
+      },
+      "grid": {
+        "rho": [
+          0.5
+        ],
+        "phi": [
+          0.5
+        ],
+        "info": [
+          "none"
+        ]
+      }
+    }
+  },
+  "finished_utc": "2026-11-13T07:03:26.324681+00:00"
+}

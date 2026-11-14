@@ -43,7 +43,7 @@ def main():
             print(f"[{split}] already present, skipping")
             continue
 
-        # Try Azure zip first; fallback to HF direct files
+
         zip_path = raw / f"MINDsmall_{split}.zip"
         url = URLS[split]
         success = False

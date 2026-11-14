@@ -1,4 +1,3 @@
-"""Unique run folders with local provenance, logs, source, and file checksums."""
 import hashlib
 import importlib.metadata
 import json
@@ -39,7 +38,7 @@ def write_manifest(root):
 
 
 def verify_manifest(root, ignore_report=True):
-    """Reject modified archive inputs before regenerating derived report files."""
+
     root = Path(root).resolve()
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("schema_version") != 1:
@@ -73,7 +72,7 @@ class _Tee:
 
 
 class RunBundle:
-    """Capture a complete command run without overwriting an older run."""
+
 
     def __init__(self, output_base, config, arguments, data_kind):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")

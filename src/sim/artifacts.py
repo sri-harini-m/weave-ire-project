@@ -1,8 +1,3 @@
-"""Lossless local population archives and safe classical-model checkpoints.
-
-Arrays use NPZ without pickle. JSON stores schemas and metadata. Hidden simulator
-values are saved separately from observable recommender inputs.
-"""
 from datetime import datetime, timezone
 import errno
 import hashlib
@@ -52,7 +47,7 @@ def _write_json(path, value):
 
 
 def _write_npz(path, values, metadata=None):
-    """Store numeric/string arrays, preserving object arrays through JSON."""
+
     arrays, objects = {}, {}
     for key, value in values.items():
         if value is None:
@@ -83,7 +78,7 @@ def _read_npz(path):
 
 
 def world_digest(world):
-    """Identify all catalogue fields, including article order and embeddings."""
+
     digest = hashlib.sha256()
     for name in WORLD_FIELDS:
         value = getattr(world, name)
@@ -111,7 +106,7 @@ def save_world(world, path):
 
 
 def _share_world(world, source, destination):
-    """Reuse an immutable world file after checking only its saved header."""
+
     if not source.is_file():
         raise FileNotFoundError(f"Shared world archive does not exist: {source}")
     with np.load(source, allow_pickle=False) as stored:
@@ -125,7 +120,7 @@ def _share_world(world, source, destination):
     except OSError as error:
         if error.errno != errno.EXDEV:
             raise
-        # Exclusive creation retains the same no-overwrite guarantee across filesystems.
+
         with source.open("rb") as incoming, destination.open("xb") as outgoing:
             shutil.copyfileobj(incoming, outgoing)
 
@@ -139,7 +134,7 @@ def load_world(path):
     for name in ("N", "rho", "unit", "kind"):
         fields[name] = fields[name].item()
     world = World(**fields)
-    # Retain the exact original matrix square root, including eigenvector signs.
+
     world.L = values["L"]
     if world_digest(world) != metadata["digest"]:
         raise ValueError("World archive digest mismatch")
@@ -158,7 +153,7 @@ def _model_settings(rec):
 
 
 def save_checkpoint(rec, path):
-    """Save learned state and RNG; static embedding data remains in the world."""
+
     generator = type(rec.rng.bit_generator).__name__
     if generator not in BIT_GENERATORS:
         raise ValueError("Unsupported random bit generator")
@@ -174,7 +169,7 @@ def save_checkpoint(rec, path):
 
 
 def load_checkpoint(path, world):
-    """Restore one known algorithm without importing arbitrary classes."""
+
     path = Path(path)
     if not path.is_file():
         metadata_path = path.parent.parent / "metadata.json"
@@ -202,13 +197,13 @@ def load_checkpoint(path, world):
     rec = REGISTRY[algorithm](**metadata["settings"])
     rec.reset(world, metadata["U"], rng)
     rec.restore_model_state(values)
-    # Restore saved RNG after reset, which may draw initialization values.
+
     rng.bit_generator.state = state
     return rec
 
 
 def load_state(population_path, t, world=None):
-    """Reload the exact observable input saved before round t."""
+
     root = Path(population_path)
     world = load_world(root) if world is None else world
     prefix = root / "rounds" / f"round_{t:04d}_input"
@@ -222,13 +217,7 @@ def load_state(population_path, t, world=None):
 
 
 class PopulationArchive:
-    """Flush one population's inputs, model snapshots, and responses per round.
 
-    Every policy retains observable round inputs and responses for reports.
-    `all` also saves every model state for recommendation replay. `final` saves
-    only the final model, and `none` saves no models. Optional hidden diagnostics
-    are controlled separately. This is not a simulator-resume implementation.
-    """
 
     def __init__(self, path, metadata=None, snapshot_policy="all", diagnostics=True,
                  shared_world_path=None):
@@ -379,7 +368,7 @@ class PopulationArchive:
 
     @staticmethod
     def _feedback_signals(signals, users, U):
-        """Keep coarse observed boredom and departure feedback separate from diagnostics."""
+
         if signals is None:
             return {}
         unknown = set(signals) - {"boredom", "left_users"}

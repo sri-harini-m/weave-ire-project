@@ -1,161 +1,82 @@
-# Weave: filter bubbles and fatigue in news recommendation
+# Weave: news recommendation, filter bubbles, and fatigue
 
-Short descriptions of all twelve methods for the main report are in
-[docs/recommender_report_descriptions.md](docs/recommender_report_descriptions.md).
+This repository contains an agent-based simulation of news recommendation
+systems. It reproduces the circle-world model from Aridor, Goncalves, and
+Sikdar, then extends it to MIND-small news articles and reader fatigue.
 
-The recommender input contract, defaults, and checks are in
-[docs/recommenders.md](docs/recommenders.md).
-Saved report artifacts and offline rebuild commands are in
-[docs/report_artifacts.md](docs/report_artifacts.md).
-The K/history/MMR sweeps, ideal reference, calibrated ranking and explicit fatigue
-feedback are documented in [docs/recommendation_study.md](docs/recommendation_study.md).
+## What is included
 
-Agent-based simulation (Aridor, Goncalves & Sikdar, "Deconstructing the Filter
-Bubble") extended to news (MIND-small) with user fatigue, used to evaluate
-filter bubbles, echo chambers and fatigue under different recommenders.
+- `src/`: data preparation, simulation, recommenders, metrics, and reporting.
+- `scripts/`: data download, experiment, analysis, and validation entry points.
+- `configs/`: configurations for the final experiment families.
+- `reports/`: committed tables, figures, and machine-readable result artifacts.
+- `config.yaml`: shared defaults for data preparation and simulations.
 
-## Repo layout
+Large input data is intentionally not committed. The scripts expect MIND-small
+files under `data/raw/train/` and `data/raw/dev/`.
 
-```
-config.yaml              all settings (paths, embedding, simulation grids)
-requirements.txt
-scripts/
-  download_mind.py       downloads + unzips MIND-small into data/raw/
-  check_week1.py         the Week 1 "done when" test
-src/data/
-  prepare.py             builds articles, popularity, embeddings, user histories
-  store.py               MindStore: the one way everyone loads the data
-data/                    (git-ignored) raw/ and processed/
-```
+## Setup
 
-## Week 1 setup
-
-**1. Create the environment** (Python 3.10+)
+Python 3.10 or newer is required.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**2. Download MIND-small** (about 100 MB; you accept the
-[MIND license](https://msnews.github.io/) by downloading)
+Download and prepare MIND-small:
 
 ```bash
 python scripts/download_mind.py
-```
-
-You should now have `data/raw/train/` and `data/raw/dev/`, each containing
-`news.tsv` and `behaviors.tsv`.
-
-*If the download fails:* get `MINDsmall_train.zip` and `MINDsmall_dev.zip`
-from https://msnews.github.io/ (or the Hugging Face mirror
-`loicmagne/mind_small`), unzip them into `data/raw/train/` and
-`data/raw/dev/`, and continue.
-
-**3. Prepare the data**
-
-```bash
 python -m src.data.prepare
 ```
 
-This takes about 5–15 minutes on a laptop CPU (mostly embedding) and much less on a GPU.
-To test the pipeline quickly first, run with `--fake-embeddings`.
+The preparation step writes `articles.csv`, `embeddings.npy`, and
+`user_histories.json` to `data/processed/`. Use
+`python -m src.data.prepare --fake-embeddings` for a fast pipeline check.
 
-It writes to `data/processed/`:
+## Reproduce the experiments
 
-| File | Contents |
-|---|---|
-| `articles.csv` | news_id, category, subcategory, title, abstract, popularity (0–1) |
-| `embeddings.npy` | one normalized 384-dim vector per article, same row order as `articles.csv` |
-| `user_histories.json` | `{user_id: [news_id, ...]}`, oldest first, users with ≥ 10 clicks |
-
-**4. Run the check**
+Run the circle-world reproduction:
 
 ```bash
-python scripts/check_week1.py
+python scripts/reproduce_aridor.py --workers 4
 ```
 
-If it ends with `Week 1 check passed.`, Week 1 is done.
-
-## Using the data in code
-
-```python
-from src.data.store import MindStore
-store = MindStore()
-store.article("N55528")     # {'category': ..., 'title': ..., 'popularity': ...}
-store.embedding("N55528")   # numpy vector (384,)
-store.history("U13740")     # list of news_ids
-store.embeddings            # full matrix, for fast scoring
-store.popularity            # popularity array, same order
-```
-
-## Design decisions (worth noting in the report)
-
-- **Catalog** = all articles from train + dev, de-duplicated.
-- **Popularity** = log(1 + clicks in *train* impressions), scaled to [0, 1].
-  Only train is used, so dev stays clean for offline evaluation later.
-- **User history** = the user's pre-period history, followed by their clicks
-  during the train week, in time order.
-- **Embeddings** = `all-MiniLM-L6-v2` on "title. abstract", L2-normalized,
-  so cosine similarity is just a dot product.
-
-## The simulation (Aridor model)
-
-```
-src/sim/
-  params.py          every model parameter (paper names + our fatigue knobs)
-  world.py           item space: circle (paper) or MIND articles (news)
-  users.py           users' true values, priors, Bayesian beliefs
-  simulate.py        the round-by-round loop
-  recommenders.py    plug-in interface for recommendation systems
-  metrics.py         locality, diversity, welfare, homogeneity, fatigue, entropy
-  experiment.py      parameter grids, many populations, summaries with CIs
-  news_users.py      real MIND users as simulated agents
-scripts/
-  reproduce_aridor.py   step 1: reproduce the paper on the circle
-  run_news.py           step 2+: same model on news, with fatigue
-tests/test_sim.py       unit tests (Bayesian update vs brute force, etc.)
-```
-
-Run, from the repo root:
+Run the news simulation:
 
 ```bash
-python -m pytest -q                                   # 1. tests (seconds)
-python scripts/reproduce_aridor.py --workers 4        # 2. reproduce paper (~5-10 min)
-python scripts/run_news.py --workers 4                # 3. news + fatigue (needs Week 1 data)
-python scripts/run_news.py --recommenders none random # 4. compare recommenders
+python scripts/run_news.py --workers 4
 ```
 
-Results go to `results/`. Check `results/aridor_repro/checks.txt`: all lines
-should say PASS before trusting the news results.
-
-Decisions the paper leaves open (state these in the report):
-- prior spread sigma_bar = 1, and sigma_i = sigma
-- under "rec", the recommender reveals V; users still choose themselves
-- news distance = embedding distance after PCA to 8 dims; neighbour
-  correlation = rho, with the "neighbour" distance = median nearest-neighbour distance
-- news priors = z-scored similarity to the user's real MIND click history
-
-## Data is not committed
-
-`data/` is in `.gitignore`. Each teammate runs steps 2–3 once on their own machine.
-
-The [recommendation pilot](reports/recommendation_pilot/README.md)
-contains saved comparison tables, settings, figures, and verification evidence.
-
-## Final experiments
+Run all final experiment families:
 
 ```bash
-QUICK=1 bash scripts/run_final.sh   # quick check that every experiment runs (~5 min)
-bash scripts/run_final.sh           # full runs; analysis lands in reports/final/
+bash scripts/run_final.sh
 ```
 
-See `docs/final_experiments.md` for what each experiment answers, its outputs, and where
-each result goes in the report. Individual pieces:
+Set `QUICK=1` for a short validation run. Final outputs are written under
+`results/` and `reports/final/`.
 
-- `scripts/make_final_configs.py` writes `configs/final/*.yaml` from `config.yaml`
-- `scripts/analyse_results.py <run folder> --out <dir>` builds tables (95% CIs, paired
-  differences on the same readers, per reader type, ranking robustness) and figures
-- `scripts/validate_reader_choices.py` tests the reader choice rule on real MIND impressions
-- `scripts/estimate_fatigue.py` measures fatigue in real MIND reading (shuffled baseline)
+To rebuild report tables and figures from a saved run:
+
+```bash
+python scripts/analyse_results.py <run-directory> --out <output-directory>
+```
+
+Additional validation entry points are available in `scripts/`, including
+reader-choice validation, fatigue estimation, and report rebuilding.
+
+## Tests
+
+The original test suite is retained in the local `scratch/tests/` archive for
+reference during submission cleanup. The main reproducibility path is the
+scripted workflow above.
+
+## Data and generated files
+
+Raw and processed data, cached Python files, experiment runs, and the
+submission-cleanup archive are excluded by `.gitignore`. The MIND dataset is
+subject to its own license; download it only after reviewing the terms at
+https://msnews.github.io/.

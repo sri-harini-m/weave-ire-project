@@ -1,8 +1,3 @@
-"""Rebuild report tables and figures from saved runs, without rerunning readers.
-
-Exposure means an explicitly returned slate. Full-catalogue browsing (`none`)
-has no measured rendered exposure. Consumption is measured separately.
-"""
 import json
 from pathlib import Path
 
@@ -79,11 +74,8 @@ def _entropy(categories, n_categories):
 
 
 def population_report(world, run, slates=None):
-    """Return reader metrics, population metrics and per-round curves.
 
-    `slates` is a list of [U, K] integer arrays, one per round; `None` entries
-    represent full-catalogue browsing. Inactive rows must already be padded.
-    """
+
     seq = np.asarray(run["seq"])
     if seq.ndim != 2 or not np.issubdtype(seq.dtype, np.integer):
         raise ValueError("seq must be a [U, T] integer array")
@@ -118,8 +110,7 @@ def population_report(world, run, slates=None):
     metrics["total_read_events"] = int(valid.sum())
     metrics["total_utility_net"] = float(np.where(valid, val - pen, 0).sum())
 
-    # Retain the existing step-distance calculation, then distinguish activity
-    # from reading. The original time_curves calls actual reads active_share.
+
     old_curves = time_curves(world, run) if T > 1 else pd.DataFrame()
     steps = dict(zip(old_curves.get("t", []), old_curves.get("step_distance", [])))
     curve_rows = []
@@ -224,7 +215,7 @@ def _read_slates(directory, T):
 
 
 def _observed_metrics(directory, curves, metrics):
-    """Add only recorded feedback signals and measured call times."""
+
     flags, departures, times = [], [], []
     for t in curves["t"]:
         path = directory / "rounds" / f"round_{t:04d}_output.npz"
@@ -256,11 +247,8 @@ def _constructor_columns():
 
 
 def paired_comparisons(frame, condition_columns, metric_columns, model_columns=None):
-    """Return exact matched-population differences, preserving model controls.
 
-    Only the named contrast changes. Missing population IDs/seeds are never
-    matched. A nonunique baseline is rejected instead of being averaged.
-    """
+
     model_columns = set(model_columns or _constructor_columns())
     identity = {"recommender", "algorithm", "reference_only"}
     conditions = [c for c in condition_columns if c in frame]
@@ -325,8 +313,8 @@ def paired_comparisons(frame, condition_columns, metric_columns, model_columns=N
     outputs["paired_fatigue_feedback"].attrs.update(coverage)
     baseline = usable[algorithm.eq("none")]
     methods = usable[~algorithm.eq("none")]
-    # Baseline has no personalized model, so only common constructor controls
-    # (normally K) can be matched; every left model configuration remains a row.
+
+
     shared = [c for c in model_columns if c in frame and methods[c].notna().any() and baseline[c].notna().any()
               and c != "reference_only"]
     controls = [c for c in conditions if c not in identity | model_columns] + shared
@@ -462,11 +450,8 @@ def _figures(summary, curve_summary, output, condition_columns=None, model_colum
 
 
 def rebuild_report(run_dir):
-    """Recompute tables and plots using only population archives on disk.
 
-    Outputs are in `run_dir/report/`. Existing report outputs can be regenerated;
-    population inputs, raw results and checkpoints are never overwritten here.
-    """
+
     from .artifacts import load_world
 
     root = Path(run_dir)

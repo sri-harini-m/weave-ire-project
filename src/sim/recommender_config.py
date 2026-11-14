@@ -1,4 +1,3 @@
-"""Resolve shared and per-algorithm configuration for registered recommenders."""
 from inspect import signature
 
 from .recommenders import REGISTRY

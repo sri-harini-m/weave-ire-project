@@ -1,16 +1,3 @@
-"""Plug-in interface for recommendation systems.
-
-The paper's three regimes ("none", "rec", "oracle") are about how much the
-user KNOWS; they are set with Params.info. Real recommendation systems are
-different: they decide what the user SEES. Each round a recommender returns a
-slate of K items per user, and the user picks the best item in the slate
-according to their own beliefs.
-
-To add a recommender, subclass Recommender and implement `recommend`
-(and `observe` if it learns from feedback). Ordinary recommenders only use
-observable SimState inputs. The ideal reference receives privileged values
-through a separate setter, never through the shared state.
-"""
 from dataclasses import dataclass, field
 from collections import Counter
 import inspect
@@ -25,11 +12,11 @@ from .world import World
 @dataclass
 class SimState:
     world: World
-    t: int                         # current round
-    available: np.ndarray          # [U, N] bool, items the user can still consume
-    history: list                  # history[i] = list of items user i consumed, in order
-    ratings: np.ndarray            # [U, N] observed feedback (realised utility), NaN if none
-    active: np.ndarray             # [U] bool, user is still in the session
+    t: int
+    available: np.ndarray
+    history: list
+    ratings: np.ndarray
+    active: np.ndarray
     extra: dict = field(default_factory=dict)
 
 
@@ -42,39 +29,39 @@ class Recommender:
         self.K = K
 
     def reset(self, world: World, U: int, rng: np.random.Generator):
-        """Called once at the start of every population run."""
+
         self.world, self.U, self.rng = world, U, rng
 
     def recommend(self, state: SimState) -> np.ndarray | None:
-        """Return [U, K] item indices (use -1 for padding), or None for
-        'no recommender: the user browses the whole catalogue'."""
+
+
         raise NotImplementedError
 
     def observe(self, state: SimState, users: np.ndarray, items: np.ndarray,
                 feedback: np.ndarray):
-        """Called after each round with what users consumed and the feedback
-        (realised utility). Learning recommenders update themselves here."""
+
+
         pass
 
     def get_config(self) -> dict:
-        """Return the explicit constructor settings of a registered algorithm."""
+
         return {name: getattr(self, name) for name in
                 inspect.signature(type(self).__init__).parameters if name != "self"}
 
     def model_state(self) -> dict:
-        """Return learned arrays; static catalogue data stays in the world."""
+
         return {}
 
     def restore_model_state(self, values: dict):
         if values:
             raise ValueError("This recommender has no learned model arrays")
 
-    # helper for subclasses: top-K available items from a score matrix
+
     def top_k(self, scores: np.ndarray, available: np.ndarray) -> np.ndarray:
         s = np.where(available & np.isfinite(scores), scores, -np.inf)
         out = np.full((s.shape[0], self.K), -1, dtype=int)
         k = min(self.K, s.shape[1])
-        # Stable sorting breaks ties by catalogue index, including at the cutoff.
+
         idx = np.argsort(-s, axis=1, kind="stable")[:, :k]
         out[:, :k] = np.where(np.isfinite(np.take_along_axis(s, idx, 1)), idx, -1)
         return out
@@ -90,8 +77,8 @@ class Recommender:
 
 
 class NoRecommender(Recommender):
-    """Baseline: no recommender at all, users choose from the full catalogue
-    using only their own beliefs (the paper's 'no recommendation' world)."""
+
+
     name = "none"
 
     def recommend(self, state):
@@ -99,7 +86,7 @@ class NoRecommender(Recommender):
 
 
 class RandomRecommender(Recommender):
-    """K random available items. Useful as a sanity check / lower bound."""
+
     name = "random"
 
     def recommend(self, state):
@@ -108,11 +95,8 @@ class RandomRecommender(Recommender):
 
 
 class PopularityRecommender(Recommender):
-    """Rank by simulated read counts plus an optional MIND popularity prior.
 
-    The prior is normalized to total mass `prior_weight`; each observed read
-    adds one count, regardless of the utility reported for that read.
-    """
+
     name = "popularity"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0):
@@ -127,7 +111,7 @@ class PopularityRecommender(Recommender):
             else np.array(world.popularity, dtype=float, copy=True)
         if prior.shape != (world.N,) or not np.isfinite(prior).all() or (prior < 0).any():
             raise ValueError("popularity must be finite, nonnegative, with shape [N]")
-        # Scale before summing to avoid overflow for large valid counts.
+
         if prior.size and prior.max() > 0:
             prior /= prior.max()
             prior /= prior.sum()
@@ -152,8 +136,8 @@ class PopularityRecommender(Recommender):
 
 
 def _unit_rows(vectors):
-    """Normalize finite vectors; retain zero rows as zero vectors."""
-    # Scaling first avoids overflow when squaring large finite components.
+
+
     scale = np.max(np.abs(vectors), axis=1, keepdims=True)
     scaled = vectors / np.where(scale > 0, scale, 1)
     norm = np.linalg.norm(scaled, axis=1, keepdims=True)
@@ -161,13 +145,8 @@ def _unit_rows(vectors):
 
 
 class ContentBasedRecommender(PopularityRecommender):
-    """Cosine relevance to a visible initial profile plus simulated reads.
 
-    `extra['profiles']` is optional [U, D] public profile data. Each profile
-    contributes `profile_weight` normalized vectors; every simulated read
-    contributes one normalized article vector. A zero centroid uses popularity.
-    Feedback values do not weight this positive-interaction content model.
-    """
+
     name = "content"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0,
@@ -219,11 +198,8 @@ class ContentBasedRecommender(PopularityRecommender):
 
 
 class MMRRecommender(ContentBasedRecommender):
-    """Greedy relevance minus diversity_weight times maximum slate similarity.
 
-    Unlike the relevance-weight lambda convention, zero here disables diversity.
-    The first selection always uses relevance, with catalogue-order tie breaks.
-    """
+
     name = "mmr"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0,
@@ -260,14 +236,8 @@ class MMRRecommender(ContentBasedRecommender):
 
 
 class BM25Recommender(PopularityRecommender):
-    """Lexical article matching from visible text and simulated reading history.
 
-    The query is the set of unique lowercase alphanumeric tokens in optional
-    `extra['query_texts'][u]` and titles/abstracts of simulated reads. BM25 uses
-    positive Lucene-style IDF. Empty or out-of-vocabulary queries use popularity.
-    No stemming, stopword removal, category expansion, or hidden preferences are
-    used. Catalogue text is matched by news_id, not metadata row order.
-    """
+
     name = "bm25"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0,
@@ -360,7 +330,7 @@ class BM25Recommender(PopularityRecommender):
                 for item in idx:
                     query.update(self.document_tokens[item])
             matched = False
-            # Sorted query terms also make floating-point accumulation repeatable.
+
             for term in sorted(query):
                 if term in self.postings:
                     items, weights = self.postings[term]
@@ -376,14 +346,8 @@ class BM25Recommender(PopularityRecommender):
 
 
 class MatrixFactorizationRecommender(PopularityRecommender):
-    """Biased explicit-feedback matrix factorization with regularized ALS.
 
-    Every observed utility, including zero and negative values, is a target.
-    Missing entries are never targets. Each feedback batch warm-starts an ALS
-    refit over all stored observations. Repeated pairs retain their latest target,
-    while popularity counts every read event. Cold users use popularity; items
-    without feedback use the fitted global/user baseline instead of latent noise.
-    """
+
     name = "mf"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
@@ -439,7 +403,7 @@ class MatrixFactorizationRecommender(PopularityRecommender):
                 or (users < 0).any() or (users >= self.U).any() \
                 or (items < 0).any() or (items >= self.world.N).any():
             raise ValueError("feedback users/items must be valid integer indices")
-        # All input validation precedes changes to either observations or counts.
+
         for user, item, rating in zip(users, items, feedback):
             self.observed_ratings[user, item] = rating
         np.add.at(self.counts, items, 1.0)
@@ -450,8 +414,8 @@ class MatrixFactorizationRecommender(PopularityRecommender):
         values = self.observed_ratings[observed]
         self.global_mean = float(values.mean())
         known_items = observed.any(axis=0)
-        # Uniform early feedback can drive every fitted factor to zero. A seeded
-        # restart avoids trapping all later ALS updates at that stationary point.
+
+
         if not np.any(self.item_factors[known_items]):
             self.item_factors[known_items] = self.rng.normal(0, .1, (known_items.sum(), self.factors))
         ridge = self.regularization * np.eye(self.factors + 1)
@@ -515,11 +479,8 @@ def _category_info(world, required=True):
 
 
 class IdealRecommender(Recommender):
-    """Privileged reference ranking by true gross utility, supplied separately.
 
-    This does not guarantee the highest realized net welfare: readers still
-    choose within the returned slate and can experience fatigue.
-    """
+
     name = "ideal"
     reference_only = True
 
@@ -558,14 +519,8 @@ class IdealRecommender(Recommender):
 
 
 class CalibratedRecommender(ContentBasedRecommender):
-    """Greedy relevance and calibration to an observable category distribution.
 
-    The target combines visible `extra['category_profiles']` raw counts and
-    simulated reads. With no counts it uses the catalogue's category mix.
-    Candidate score is (1-w)*relevance - w*KL(target || .99*slate_mix+.01*target).
-    Within each category, only the most relevant remaining candidate needs to
-    be considered because its calibration term is shared by that category.
-    """
+
     name = "calibrated"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0,
@@ -648,7 +603,7 @@ class CalibratedRecommender(ContentBasedRecommender):
 
 
 class _ObservableFatigueSignals:
-    """Shared validation and storage for opted-in observable feedback only."""
+
     accepts_feedback_signals = True
 
     def _reset_signals(self):
@@ -700,7 +655,7 @@ class _ObservableFatigueSignals:
 
 
 class FatiguePopularityRecommender(_ObservableFatigueSignals, PopularityRecommender):
-    """Downweight read counts when a consumed article produces reported boredom."""
+
     name = "fatigue_popularity"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0, fatigue_weight: float = 1.0):
@@ -718,7 +673,7 @@ class FatiguePopularityRecommender(_ObservableFatigueSignals, PopularityRecommen
 
 
 class FatigueMFRecommender(_ObservableFatigueSignals, MatrixFactorizationRecommender):
-    """Fit net utility minus a coarse reported-boredom penalty using observed reads."""
+
     name = "fatigue_mf"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
@@ -743,13 +698,8 @@ class FatigueMFRecommender(_ObservableFatigueSignals, MatrixFactorizationRecomme
 
 
 class FatigueContentRecommender(_ObservableFatigueSignals, ContentBasedRecommender):
-    """Penalize recently consumed categories using only observable reading/boredom.
 
-    Per-category recent counts decay once per elapsed round. A read adds
-    1+boredom to its category. Relevance subtracts fatigue_weight times recent
-    category load / (1 + total load), so empty-round decay also reduces penalties.
-    The ordinary content profile/history calculation is retained.
-    """
+
     name = "fatigue_content"
 
     def __init__(self, K: int = 10, prior_weight: float = 1.0,

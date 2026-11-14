@@ -1,4 +1,4 @@
-# Real-data pilot: fewer users/rounds/populations than full study.
+
 aridor:
   N: 200
   T: 20

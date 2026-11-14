@@ -1,32 +1,12 @@
-"""Turn a finished run into the final tables and figures for the report.
-
-Works on any run folder written by scripts/run_news.py (it only needs
-original_populations.csv, one row per simulated population).
-
-    python scripts/analyse_results.py results/news/<run> --out reports/final/main
-    python scripts/analyse_results.py results/news/<run> --out reports/final/main \
-        --main rho=0.5 phi=0.5 K=10 --refs none content
-
-Outputs (in --out):
-    summary.csv           mean and 95% CI per condition (one row per setting x recommender)
-    paired_vs_<ref>.csv   difference from a reference recommender on the SAME readers
-                          (populations are matched by seed), with bootstrap 95% CIs
-    per_type.csv          results per reader type (runs with --reader-types)
-    rank_robustness.csv   does the recommender ranking hold across settings?
-                          (Kendall tau between settings, per metric)
-    figures/*.png         coverage vs utility, filter bubble vs echo chamber,
-                          MMR diversity curve, slate size, reader types
-    README.md             what each file is, and the main-setting table
-"""
 import argparse
 import itertools
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 METRICS = {
     "cat_entropy": "Category entropy (topic coverage)",
@@ -39,7 +19,7 @@ METRICS = {
 }
 HIGHER_BETTER = {"cat_entropy": True, "homogeneity": False, "welfare_net": True,
                  "fatigue": False, "diversity": True, "rounds": True, "dropout": False}
-# Columns that can define a setting (only those that vary in a run are used).
+
 SETTING_COLS = ["rho", "phi", "gamma", "beta", "sigma_bar", "uncertainty_n0",
                 "outside_option", "fatigue_decay", "K", "reader_history_visible",
                 "reader_types_enabled"]
@@ -82,7 +62,7 @@ def summary_table(df, keys, metrics):
 
 
 def paired_table(df, settings, metrics, ref):
-    """Recommender minus reference, matched on the same readers (seed)."""
+
     rows = []
     groups = df.groupby(settings, dropna=False) if settings else [((), df)]
     for k, g in groups:
@@ -108,7 +88,7 @@ def paired_table(df, settings, metrics, ref):
 
 
 def paired_setting(df, settings, metrics, col, treat, base):
-    """Same recommender, same readers: setting col=treat minus col=base."""
+
     others = [c for c in settings if c != col]
     rows = []
     for k, g in df.groupby(others + ["recommender"], dropna=False):
@@ -149,7 +129,7 @@ def per_type_table(df, keys):
 
 
 def kendall_tau(a, b):
-    """Kendall tau-a between two score vectors over the same items."""
+
     n, s = len(a), 0
     for i, j in itertools.combinations(range(n), 2):
         s += np.sign(a[i] - a[j]) * np.sign(b[i] - b[j])
@@ -164,7 +144,7 @@ def rank_robustness(summary, settings, metrics):
     groups = list(s.groupby(settings, dropna=False))
     for m in metrics:
         if s.groupby(settings, dropna=False)[m].nunique().max() <= 1:
-            continue                     # metric does not vary between recommenders
+            continue
         taus, winners = [], []
         tables = {}
         for k, g in groups:
@@ -191,7 +171,7 @@ def pick_main(summary, settings, main):
                 q = q[np.isclose(q[col].astype(float), float(val))]
             except (TypeError, ValueError):
                 q = q[q[col].astype(str).str.lower() == str(val).lower()]
-    # remaining varying settings: take the first value of each so one row per recommender
+
     for col in settings:
         if col not in main and q[col].nunique() > 1:
             q = q[q[col] == sorted(q[col].dropna().unique())[0]]
@@ -199,8 +179,8 @@ def pick_main(summary, settings, main):
 
 
 def scatter(ax, q, x, y):
-    """One marker per recommender, identified in a legend (identical points,
-    e.g. content and mmr_0, share one entry). Open squares = reference only."""
+
+
     labels = q.groupby([q[x].round(6), q[y].round(6)])["recommender"].transform(
         lambda s: " = ".join(s))
     markers = itertools.cycle("o^vD<>ph*X")

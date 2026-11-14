@@ -1,0 +1,22 @@
+## main...origin/main
+ M README.md
+ D reports/fatigue_calibration.csv
+ D reports/fatigue_calibration.md
+ D reports/figures/fatigue_calibration.png
+ M reports/method_notes.md
+ D reports/reader_choice_validation.csv
+ D reports/reader_choice_validation.md
+ D reports/reader_validation.csv
+ D reports/reader_validation.md
+ M scripts/estimate_fatigue.py
+ M scripts/validate_reader_choices.py
+ M src/sim/experiment.py
+ M src/sim/metrics.py
+?? configs/final/
+?? docs/final_experiments.md
+?? final_run.log
+?? reports/final/
+?? scripts/analyse_results.py
+?? scripts/make_final_configs.py
+?? scripts/run_final.sh
+?? tests/test_final_additions.py

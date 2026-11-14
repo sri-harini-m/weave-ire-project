@@ -1,41 +1,3 @@
-"""Estimate fatigue (satiation) from real MIND click histories.
-
-Two analyses, both on users' ordered click histories:
-
-1. Streak analysis with a shuffled baseline.
-   P(next click is in the same subcategory | k consecutive same-subcategory
-   clicks), compared with the same quantity after randomly shuffling each
-   user's history. Shuffling keeps each user's topic mix but destroys order,
-   so: observed < shuffled means satiation (fatigue); observed > shuffled
-   means momentum (binge reading). Raw continuation probabilities alone mix
-   these with how concentrated each user's interests are.
-
-2. Conditional choice model, without look-ahead.
-   For each user, the first half of their history sets their baseline topic
-   preference; we then predict each click in the second half. For every
-   observed click (label 1) we sample one subcategory the user did not choose
-   (label 0) from their baseline topics, and fit
-       logit P(choose s) = b0 + b_pref * pref(s) + b_fatigue * stock(s)
-   where stock(s) = sum over earlier clicks of decay^age * 1[click was in s].
-   The decay is chosen by held-out log-likelihood over a grid.
-   Because stock(s) also partly tracks how often a user reads s, b_fatigue is
-   biased upwards even when order carries no information. We therefore fit the
-   same model on each user's history in shuffled order (same topic mix, no
-   order) and report the ORDER EFFECT = b_fatigue(observed) - b_fatigue(shuffled).
-   Order effect < 0 means satiation; > 0 means momentum.
-
-The simulator's phi is in different units (utility per unit of fatigue stock
-on the z-scored belief scale), so the estimate does not map one-to-one onto phi.
-We report the decay directly and the odds effect of one recent read; the
-simulator's phi values remain modelling choices, informed by the sign and size
-of this effect.
-
-Outputs (in --out-dir, default reports/):
-    fatigue_streaks.csv, fatigue_decay_fit.csv, fatigue_calibration.md,
-    figures/fatigue_calibration.png
-
-    python scripts/estimate_fatigue.py
-"""
 import argparse
 import sys
 from collections import Counter
@@ -43,12 +5,12 @@ from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.data.store import MindStore  # noqa: E402
+from src.data.store import MindStore
 
 DECAYS = [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
 
@@ -97,7 +59,7 @@ def streak_table(seqs, max_k=6, n_shuffles=5, seed=0):
 
 
 def choice_events(seqs, decay, seed):
-    """Features [pref, stock] and labels from the second half of each history."""
+
     rng = np.random.default_rng(seed)
     X, y = [], []
     for s in seqs:
@@ -121,7 +83,7 @@ def choice_events(seqs, decay, seed):
 
 
 def fit_logit(X, y, iters=50):
-    """Unpenalised logistic regression (Newton), with standard errors."""
+
     Xd = np.column_stack([np.ones(len(X)), X])
     w = np.zeros(Xd.shape[1])
     for _ in range(iters):

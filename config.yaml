@@ -1,21 +1,21 @@
-# Central config. Every script reads from here, so nobody hard-codes values.
+
 
 paths:
-  raw_dir: data/raw              # unzipped MIND files go here (train/, dev/)
-  processed_dir: data/processed  # outputs of src/data/prepare.py
+  raw_dir: data/raw
+  processed_dir: data/processed
 
 embedding:
-  model: sentence-transformers/all-MiniLM-L6-v2   # 384-dim, fast on CPU
+  model: sentence-transformers/all-MiniLM-L6-v2
   batch_size: 256
 
 users:
-  min_history: 10   # only keep users with at least this many past clicks
+  min_history: 10
 
 recommenders:
   K: 10
-  prior_weight: 1.0      # total popularity pseudocount mass before simulated reads
-  profile_weight: 1.0    # initial visible profile counts as one normalized article
-  diversity_weight: 0.3  # MMR penalty; 0 exactly matches content-based ranking
+  prior_weight: 1.0
+  profile_weight: 1.0
+  diversity_weight: 0.3
   bm25:
     k1: 1.2
     b: 0.75
@@ -24,43 +24,43 @@ recommenders:
     regularization: 1.0
     iterations: 3
 
-# ---- Step 1: reproduce Aridor et al. on the circle --------------------------
+
 aridor:
-  N: 200          # items on the circle (paper)
-  T: 20           # items consumed per user (paper)
-  U: 100          # users per population (paper)
-  n_pop: 20       # populations per setting (paper: 100; 20 is enough for trends)
-  sigma_bar: 1.0  # spread of prior means (NOT given in the paper; our choice)
+  N: 200
+  T: 20
+  U: 100
+  n_pop: 20
+  sigma_bar: 1.0
   seed: 42
-  reduced_grid:   # ~10 min on 1 core
+  reduced_grid:
     rho: [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]
     gamma: [0.0, 0.3, 1.0, 5.0]
     beta: [0.0, 1.0, 5.0]
     sigma: [1.0]
-  full_grid:      # exactly the paper's grid (hours; use --workers)
+  full_grid:
     rho: [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]
     gamma: [0.0, 0.3, 0.6, 1.0, 5.0]
     beta: [0.0, 0.4, 0.8, 1.0, 2.0, 5.0]
     sigma: [0.25, 0.5, 1.0, 2.0, 4.0]
 
-# ---- Step 2+: the same model on MIND news ----------------------------------
+
 news:
-  N: 500             # articles in the simulated catalogue
-  pca_dims: 8        # embedding dims used for distances (see src/sim/world.py)
-  only_clicked: true # sample articles that received >=1 click in MIND
-  U: 100             # real MIND users per population
+  N: 500
+  pca_dims: 8
+  only_clicked: true
+  U: 100
   n_pop: 20
   T: 20
   seed: 42
-  base:              # fixed model parameters
-    reader_history_visible: false  # false = new users (fair); true = returning users
+  base:
+    reader_history_visible: false
     sigma: 1.0
     sigma_bar: 1.0
     beta: 1.0
     gamma: 1.0
     fatigue_decay: 0.8
     fatigue_rho: 0.8
-  grid:              # what we vary
+  grid:
     rho: [0.0, 0.5, 0.9]
     phi: [0.0, 0.5, 1.0]
     info: [none, rec, oracle]

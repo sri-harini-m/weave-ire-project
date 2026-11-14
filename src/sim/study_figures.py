@@ -1,4 +1,3 @@
-"""Bounded study figures: exact condition lines, small canvases, no pooling."""
 import json
 from pathlib import Path
 
@@ -41,12 +40,8 @@ def _save_figure(fig, base):
 
 
 def study_figures(summary, output, condition_columns, model_columns):
-    """Save compact pages and their exact line/facet/source tables.
 
-    Every simulator parameter is a facet control. Every constructor setting is
-    an exact line control. Only slate size changes along a K line. A duplicate
-    x value within one exact line is rejected rather than averaged.
-    """
+
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -57,7 +52,7 @@ def study_figures(summary, output, condition_columns, model_columns):
     model = set(model_columns) | {"recommender", "algorithm", "reference_only"}
     x_column = "requested_K" if "requested_K" in summary and summary["requested_K"].notna().any() else "K"
     if x_column not in summary:
-        # Large non-study reports remain bounded and retain each condition.
+
         frame = summary.copy()
         frame["_condition_position"] = np.arange(len(frame))
         x_column = "_condition_position"
@@ -134,8 +129,7 @@ def study_figures(summary, output, condition_columns, model_columns):
             plt.close(fig)
             rendered.append(base.name)
 
-    # Fixed-K MMR sweeps use the actual penalty weight as x, rather than treating
-    # the weight as a relevance coefficient or averaging differently named runs.
+
     if "diversity_weight" in frame and frame["diversity_weight"].notna().any():
         algorithm = frame.get("algorithm", frame["recommender"])
         mmr = frame[algorithm.eq("mmr") & frame["diversity_weight"].notna()]

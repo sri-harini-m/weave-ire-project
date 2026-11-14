@@ -1,21 +1,3 @@
-"""Write the configs for the final experiments, derived from config.yaml.
-
-Each experiment changes only the `news` grid / base settings, so every run
-shares the same data paths, world and recommender settings.
-
-    python scripts/make_final_configs.py              # writes configs/final/*.yaml
-    python scripts/make_final_configs.py --n-pop 2    # quick smoke-test versions
-
-Experiments (see docs/final_experiments.md):
-    main        identical readers, fatigue phi in {0, 0.5, 1}          -> RQ1, RQ3
-    types       four reader types, history-based uncertainty (n0=20)  -> who is affected
-    dropout     readers may leave: outside option x fatigue           -> session length
-    n0          history-length uncertainty n0 in {5, 20, 80}          -> sensitivity
-    rho         spillover rho in {0, 0.5, 0.9}                        -> sensitivity
-    robustness  gamma x beta x sigma_bar                              -> ranking robustness
-    pca4/pca16  embedding dimensions for article similarity           -> sensitivity
-Slate size and returning users use the main config with command-line flags.
-"""
 import argparse
 import copy
 from pathlib import Path
@@ -55,8 +37,7 @@ def main():
         news["n_pop"] = args.n_pop or spec.get("n_pop", news.get("n_pop", 20))
         if "pca_dims" in spec:
             news["pca_dims"] = spec["pca_dims"]
-        header = f"# Final experiment '{name}', generated from {args.base} by scripts/make_final_configs.py\n"
-        (out / f"{name}.yaml").write_text(header + yaml.safe_dump(cfg, sort_keys=False))
+        (out / f"{name}.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
         print("wrote", out / f"{name}.yaml")
 
 

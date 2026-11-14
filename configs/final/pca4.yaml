@@ -1,4 +1,4 @@
-# Final experiment 'pca4', generated from config.yaml by scripts/make_final_configs.py
+
 paths:
   raw_dir: data/raw
   processed_dir: data/processed
