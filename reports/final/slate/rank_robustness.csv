@@ -1,0 +1,6 @@
+metric,n_settings,mean_kendall_tau,min_kendall_tau,most_frequent_best,best_in_share_of_settings
+cat_entropy,15,0.5433106575963719,0.0,mf,0.7333333333333333
+homogeneity,15,0.5188208616780046,0.0,random,0.8
+welfare_net,15,0.5197278911564627,0.0,none,0.8
+fatigue,15,0.2349206349206349,0.0,popularity,0.5333333333333333
+diversity,15,0.564172335600907,0.0,popularity,0.8
