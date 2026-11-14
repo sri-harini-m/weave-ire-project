@@ -1,0 +1,135 @@
+nohup: ignoring input
+wrote configs/final/main.yaml
+wrote configs/final/types.yaml
+wrote configs/final/dropout.yaml
+wrote configs/final/n0.yaml
+wrote configs/final/rho.yaml
+wrote configs/final/robustness.yaml
+wrote configs/final/pca4.yaml
+wrote configs/final/pca16.yaml
+=== main ===
+Saving complete MIND run to: results/final/main/20261112T144749283363Z_dda369ca
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+                    cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                       
+bm25                      0.309        0.201        0.078    1.091
+calibrated                0.208        0.220        0.078    1.178
+content                   0.326        0.184        0.143    1.192
+fatigue_content           0.742        0.143        0.487    1.033
+fatigue_mf                0.720        0.371        0.099    0.925
+fatigue_popularity        0.539        0.693       -0.430    0.819
+ideal                     0.531        0.093        2.413    1.030
+mf                        0.720        0.375        0.100    0.930
+mmr_0                     0.326        0.184        0.143    1.192
+mmr_0.3                   0.403        0.112        0.452    1.146
+mmr_0.6                   0.455        0.093        0.627    1.101
+mmr_0.9                   0.490        0.089        0.668    1.070
+mmr_1                     0.499        0.090        0.669    1.063
+none                      0.505        0.089        0.864    1.002
+popularity                0.539        0.693       -0.430    0.819
+random                    0.583        0.043        0.221    0.913
+Saved to results/final/main/20261112T144749283363Z_dda369ca
+Saved run: results/final/main/20261112T144749283363Z_dda369ca
+    analysis -> reports/final/main
+=== types ===
+Saving complete MIND run to: results/final/types/20261112T161012510966Z_25bc50ca
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+                    cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                       
+bm25                      0.307        0.212        0.149    1.156
+calibrated                0.206        0.217        0.168    1.245
+content                   0.326        0.189        0.200    1.256
+fatigue_content           0.750        0.145        0.587    1.085
+fatigue_mf                0.726        0.371        0.218    0.998
+fatigue_popularity        0.545        0.678       -0.365    0.867
+ideal                     0.569        0.092        2.453    1.087
+mf                        0.730        0.383        0.224    1.002
+mmr_0.6                   0.465        0.096        0.681    1.155
+none                      0.525        0.091        0.906    1.059
+popularity                0.545        0.678       -0.365    0.867
+random                    0.593        0.043        0.295    0.964
+Saved to results/final/types/20261112T161012510966Z_25bc50ca
+Saved run: results/final/types/20261112T161012510966Z_25bc50ca
+    analysis -> reports/final/types
+=== slate ===
+Saving complete MIND run to: results/final/slate/20261112T163335774584Z_bacd3e90
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+             cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                
+bm25               0.399        0.160        0.362    1.048
+content            0.406        0.154        0.460    1.110
+ideal              0.519        0.091        1.966    1.027
+mf                 0.659        0.283        0.347    0.948
+mmr_0.6            0.483        0.093        0.707    1.065
+none               0.505        0.089        0.864    1.002
+popularity         0.579        0.483        0.005    0.881
+random             0.555        0.060        0.447    0.946
+Saved to results/final/slate/20261112T163335774584Z_bacd3e90
+Saved run: results/final/slate/20261112T163335774584Z_bacd3e90
+    analysis -> reports/final/slate
+=== returning ===
+Saving complete MIND run to: results/final/returning/20261112T201046912499Z_82f98db7
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+             cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                
+bm25               0.350        0.194        0.080    1.043
+calibrated         0.330        0.154        0.356    1.132
+content            0.339        0.140        0.289    1.180
+mf                 0.720        0.375        0.100    0.930
+mmr_0.6            0.457        0.089        0.676    1.090
+none               0.505        0.089        0.864    1.002
+popularity         0.539        0.693       -0.430    0.819
+Saved to results/final/returning/20261112T201046912499Z_82f98db7
+Saved run: results/final/returning/20261112T201046912499Z_82f98db7
+    analysis -> reports/final/returning
+=== dropout ===
+Saving complete MIND run to: results/final/dropout/20261112T213204901721Z_285d174e
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+             cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                
+bm25               0.223        0.089        0.518    0.807
+content            0.244        0.096        0.497    0.911
+ideal              0.478        0.073        2.313    1.275
+mf                 0.198        0.280        1.004    0.388
+mmr_0.6            0.373        0.069        0.527    1.079
+none               0.460        0.069        0.636    1.143
+popularity         0.183        0.348        0.737    0.389
+random             0.351        0.013        0.472    0.566
+Saved to results/final/dropout/20261112T213204901721Z_285d174e
+Saved run: results/final/dropout/20261112T213204901721Z_285d174e
+    analysis -> reports/final/dropout
+=== n0 ===
+Saving complete MIND run to: results/final/n0/20261112T215239856851Z_af47a048
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+             cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                
+bm25               0.315        0.199        0.123    1.099
+content            0.330        0.186        0.179    1.198
+ideal              0.550        0.090        2.413    1.033
+mf                 0.722        0.378        0.103    0.948
+mmr_0.6            0.466        0.094        0.652    1.110
+none               0.525        0.092        0.867    1.024
+popularity         0.542        0.690       -0.390    0.827
+random             0.592        0.043        0.250    0.925
+Saved to results/final/n0/20261112T215239856851Z_af47a048
+Saved run: results/final/n0/20261112T215239856851Z_af47a048
+    analysis -> reports/final/n0
+=== rho ===
+Saving complete MIND run to: results/final/rho/20261112T223704854652Z_70660614
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}
+             cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                
+bm25               0.308        0.201       -0.001    1.107
+content            0.324        0.185        0.063    1.199
+ideal              0.547        0.092        2.194    1.008
+mf                 0.718        0.369        0.028    0.944
+mmr_0.6            0.454        0.093        0.487    1.115
+none               0.507        0.088        0.681    1.037
+popularity         0.540        0.686       -0.511    0.830
+random             0.582        0.043        0.149    0.934
+Saved to results/final/rho/20261112T223704854652Z_70660614
+Saved run: results/final/rho/20261112T223704854652Z_70660614
+    analysis -> reports/final/rho
+=== robustness ===
+Saving complete MIND run to: results/final/robustness/20261112T231503776446Z_f3ee356d
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.11806443520218278, 'corr_p50': 0.09510577297764275, 'corr_p99': 0.3934221266075359, 'min_eig': -5.145408072135456e-15, 'n_categories': 14}

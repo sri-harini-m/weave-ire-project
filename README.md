@@ -143,3 +143,19 @@ Decisions the paper leaves open (state these in the report):
 
 The [recommendation pilot](reports/recommendation_pilot/README.md)
 contains saved comparison tables, settings, figures, and verification evidence.
+
+## Final experiments
+
+```bash
+QUICK=1 bash scripts/run_final.sh   # quick check that every experiment runs (~5 min)
+bash scripts/run_final.sh           # full runs; analysis lands in reports/final/
+```
+
+See `docs/final_experiments.md` for what each experiment answers, its outputs, and where
+each result goes in the report. Individual pieces:
+
+- `scripts/make_final_configs.py` writes `configs/final/*.yaml` from `config.yaml`
+- `scripts/analyse_results.py <run folder> --out <dir>` builds tables (95% CIs, paired
+  differences on the same readers, per reader type, ranking robustness) and figures
+- `scripts/validate_reader_choices.py` tests the reader choice rule on real MIND impressions
+- `scripts/estimate_fatigue.py` measures fatigue in real MIND reading (shuffled baseline)

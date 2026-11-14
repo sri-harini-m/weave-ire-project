@@ -37,11 +37,11 @@ def user_metrics(world: World, run: dict) -> pd.DataFrame:
         if "reader_types" in run and run["reader_types"] is not None:
             r["reader_type"] = str(run["reader_types"][i])
         if "gammas" in run and run["gammas"] is not None:
-            r["gamma"] = float(run["gammas"][i])
+            r["reader_gamma"] = float(run["gammas"][i])
         if "phis" in run and run["phis"] is not None:
-            r["phi"] = float(run["phis"][i])
+            r["reader_phi"] = float(run["phis"][i])
         if "decays" in run and run["decays"] is not None:
-            r["fatigue_decay"] = float(run["decays"][i])
+            r["reader_fatigue_decay"] = float(run["decays"][i])
         if "history_lens" in run and run["history_lens"] is not None:
             r["history_len"] = int(run["history_lens"][i])
         if m >= 2:
@@ -62,6 +62,31 @@ def user_metrics(world: World, run: dict) -> pd.DataFrame:
             r["n_categories"] = int(len(counts))
         rows.append(r)
     return pd.DataFrame(rows)
+
+
+PER_TYPE_METRICS = ("cat_entropy", "diversity", "local_distance", "welfare",
+                    "welfare_net", "fatigue", "rounds", "dropout")
+
+
+def per_type_metrics(um: pd.DataFrame, run: dict) -> dict:
+    """Metrics averaged within each reader type, as flat columns.
+
+    Returns {"<metric>__<type>": mean, "n_readers__<type>": count,
+    "homogeneity__<type>": Jaccard within that type}. Empty when all readers
+    share one type (homogeneous populations), so old outputs are unchanged.
+    """
+    if "reader_type" not in um.columns or um["reader_type"].nunique() < 2:
+        return {}
+    out = {}
+    for t, grp in um.groupby("reader_type"):
+        out[f"n_readers__{t}"] = int(len(grp))
+        for m in PER_TYPE_METRICS:
+            if m in grp.columns:
+                out[f"{m}__{t}"] = float(grp[m].mean())
+        idx = grp["user"].to_numpy()
+        if len(idx) >= 2:
+            out[f"homogeneity__{t}"] = homogeneity({"seq": run["seq"][idx]})
+    return out
 
 
 def homogeneity(run: dict) -> float:

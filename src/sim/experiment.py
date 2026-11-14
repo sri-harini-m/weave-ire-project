@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .metrics import homogeneity, time_curves, user_metrics
+from .metrics import homogeneity, per_type_metrics, time_curves, user_metrics
 from .params import Params
 from .simulate import run_population
 from .recommenders import NoRecommender
@@ -70,7 +70,8 @@ def _one(job):
            "requested_K": requested_k, "reader_history_visible": p.reader_history_visible,
            "K": rec.K, **{k: v for k, v in rec.get_config().items() if k != "K"},
            **um.drop(columns=["user"]).mean(numeric_only=True).to_dict(),
-           "homogeneity": homogeneity(run)}
+           "homogeneity": homogeneity(run),
+           **per_type_metrics(um, run)}
     curves = None
     if keep_curves:
         curves = time_curves(world, run).assign(**{k: pdict[k] for k in pdict},

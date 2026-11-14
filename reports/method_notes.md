@@ -82,62 +82,78 @@ Continuous range sampling is also supported: $\gamma \sim U(0, 2)$, $\phi \sim U
 
 ---
 
-## 4. Empirical Calibration of Fatigue from Real MIND Data
+## 4. Fatigue in Real MIND Reading
 
-### 4.1 Subcategory Streak Satiation
-From 559,191 reading transitions in MIND click logs, we tracked how the probability of clicking an article in the same subcategory evolves as consecutive reads ($k$) in that subcategory accumulate:
+**Script:** `scripts/estimate_fatigue.py` → `reports/final/validation/fatigue_calibration.md`,
+`fatigue_streaks.csv`, `fatigue_decay_fit.csv`, `figures/fatigue_calibration.png`.
+Fill the numbers below from those files after the final run.
 
-| Consecutive Reads ($k$) | Total Occurrences | P(Continue Same Subcategory) | P(Switch Topic) |
-|---|---|---|---|
-| **1** | 559,191 | 7.00% | **93.00%** |
-| **2** | 39,120 | 15.50% | **84.50%** |
-| **3** | 6,064 | 24.54% | **75.46%** |
-| **4** | 1,488 | 29.77% | **70.23%** |
-| **5** | 443 | 39.73% | **60.27%** |
-| **6** | 176 | 43.18% | **56.82%** |
-| **7** | 76 | 52.63% | **47.37%** |
+### 4.1 Streaks against a shuffled baseline
+Raw continuation probabilities (e.g. "93% switch topic after one read") mostly reflect how
+many subcategories exist and how spread out each user's interests are, so on their own they
+are not evidence of fatigue. We therefore compare P(next click in the same subcategory | k
+consecutive same-subcategory clicks) with the same quantity after shuffling each user's
+history (same topic mix, no order). Observed below shuffled = satiation; above = momentum.
+In the earlier analysis, continuation *rose* with streak length (7% → 53%), which points to
+momentum or topic loyalty rather than fatigue; the shuffled comparison tests this properly.
 
-*Key Finding*: Real readers exhibit strong variety-seeking. After reading just one article in a subcategory, readers switch to a different topic **93.0%** of the time.
+### 4.2 Choice model without look-ahead
+Baseline topic preference is computed from the first half of each user's history, and clicks
+in the second half are predicted from preference and a decaying exposure stock
+F_t(s) = Σ_{τ<t} δ^{t-τ} 1[click_τ ∈ s]. The decay δ is chosen by held-out log-likelihood
+over a grid (not assumed). Because the exposure stock also partly tracks how often a user
+reads a topic, the coefficient is biased upwards even when order carries no information; we
+report the **order effect** = coefficient on real order minus coefficient on shuffled order.
 
-### 4.2 Discrete-Choice Regression
-We fit a logistic choice model predicting the log-odds of clicking subcategory $s$ as a function of the user's baseline preference $P_{\text{base}}(s)$ and decaying exposure stock $F_t(s) = \sum_{\tau < t} \delta^{t - \tau} \mathbb{I}(\text{click}_\tau = s)$:
-
-$$\log \frac{P(\text{click } s)}{1 - P(\text{click } s)} = \beta_{\text{pref}} \cdot P_{\text{base}}(s) + \beta_{\text{fatigue}} \cdot F_t(s)$$
-
-- **Baseline Preference Weight ($\beta_{\text{pref}}$)**: `+16.114` ($p < 0.001$)
-- **Fatigue Coefficient ($\beta_{\text{fatigue}}$)**: `-0.590` ($p < 0.001$)
-- **Calibrated Decay Rate ($\delta$)**: `0.80`
-- **Effective Relative Fatigue ($\phi = |\beta_{\text{fatigue}} / \beta_{\text{pref}}|$)**: $\approx 0.037$
-
-This confirms statistically that holding long-term preference constant, recent exposure exerts a statistically significant negative penalty on repeat consumption.
-
----
-
-## 5. Offline Impression Replay & Reader Choice Validation
-
-To verify that our simulated agents behave like real news consumers, we replayed 10,000 real impression sessions from `data/raw/dev/behaviors.tsv`. At each impression, the candidate articles shown to the real user were ranked by:
-1. **Random Baseline** (uniform choice)
-2. **Popularity Baseline** (global training click frequency)
-3. **Simulated Reader (Ours)** (expected certainty equivalent derived from Bayesian beliefs)
-
-### Results Table (with 95% Confidence Intervals)
-
-| Evaluation Model | Top-1 Hit Rate (Precision@1) | 95% CI | Mean Reciprocal Rank (MRR) | 95% CI | ROC-AUC | 95% CI |
-|---|---|---|---|---|---|---|
-| **Random Baseline** | 9.78% | [0.0920, 0.1036] | 0.2426 | [0.2370, 0.2482] | 0.4989 | [0.4930, 0.5047] |
-| **Popularity Baseline** | 11.06% | [0.1045, 0.1167] | 0.2611 | [0.2553, 0.2670] | 0.5298 | [0.5251, 0.5345] |
-| **Simulated Reader (Ours)** | **20.16%** | **[0.1937, 0.2095]** | **0.3653** | **[0.3584, 0.3722]** | **0.6469** | **[0.6411, 0.6526]** |
-
-### Highlights:
-- **Top-1 Accuracy**: The simulated reader's top recommendation is the actual article clicked by the real user **20.16%** of the time — a **2.06x lift over random guessing** and an 82% relative gain over popularity.
-- **MRR**: Rises from 0.2426 to **0.3653**, indicating that the target article is ranked near the very top of the candidate slate.
-- **Discrimination**: The ROC-AUC of **0.6469** confirms that simulated agent beliefs accurately replicate real human click decisions.
+### 4.3 How this is used in the simulator
+- The estimated decay can inform `fatigue_decay`.
+- The order effect is on a logit scale, not the simulator's utility scale, so it does not
+  give φ directly. Its sign tells us whether real readers show satiation or momentum.
+  The φ values (0, 0.5, 1 and the reader-type values) are modelling assumptions, so results
+  are reported across φ, including φ = 0.
+- Caveats: MIND logs come from a live recommender (order partly reflects what was shown),
+  and subcategory is a coarse proxy for similarity.
 
 ---
 
-## 6. Suggested Text for Your Report
+## 5. Validation of the Reader Choice Rule on Real Impressions
 
-### Section: "Agent-Based Simulation Design"
-> *"We model news consumers using an agent-based simulation grounded in Bayesian learning with learning spillovers (Aridor et al., 2020), extended to real-world news articles from the Microsoft News Dataset (MIND). To overcome the artificial nature of purely synthetic agent preferences, we introduce two key real-world groundings: (1) we partition each reader's real click history into an earlier subset ($H_{\text{prior}}$) that governs initial beliefs and a fixed 10-click recent subset ($H_{\text{true}}$) that defines true current tastes, directly capturing empirical interest drift; and (2) we scale each agent's prior variance as $s_i^2 = s_0^2 \frac{n_0}{n_0 + n_i}$, reflecting the fact that casual users face greater uncertainty regarding unfamiliar topics than experienced users.*
->
-> *Furthermore, readers are modeled with heterogeneous behavioral profiles: Cautious readers ($\gamma=2.0$) heavily penalize unfamiliar topics; Explorers ($\gamma=0.0$) consume broadly; and Easily Bored readers ($\phi=1.5$) experience rapid fatigue accumulation. Fatigue is empirically calibrated from 559,191 transitions in MIND click logs, where users exhibit a 93% probability of switching topics following a subcategory read. When evaluated across 10,000 real MIND dev impression sessions, the simulated reader achieves a Top-1 Hit Rate of 20.16% (a 2.06x lift over random chance) and an ROC-AUC of 0.6469, confirming that our agents faithfully mirror real-world reader choices."*
+**Script:** `scripts/validate_reader_choices.py` → `reports/final/validation/reader_choice_validation.md`,
+`reader_choice_validation.csv`, `reader_choice_validation_grid.csv`.
+
+The earlier version of this check ranked shown articles only by cosine similarity to the
+user's mean history embedding. That validates the *starting beliefs*, not the choice rule
+(it is the same check as the mid-submission, AUC 0.647).
+
+The final version scores each shown article with the simulator's own choice rule:
+score = mean − γ/2 · variance − φ · fatigue, using the simulator's correlation and fatigue
+kernels, where the user's most recent clicks (up to 30) are treated as already read.
+Past reads are assumed to bring no surprise (their values are not observable in MIND), so
+they change the variance and fatigue terms but not the mean. γ = φ = 0 reproduces the plain
+similarity ranking. We report AUC, top-1 hit rate and MRR with 95% CIs for random,
+popularity, plain similarity, the four reader types and the best-fitting (γ, φ) from a grid.
+
+Users are split into two halves by user id. The (γ, φ) grid is searched on the fit half
+only, and every scorer in the main table, including the best fit, is scored on the
+held-out test half. The script also reports the paired AUC gain of the best fit over plain
+similarity on the test half, with a 95% CI.
+
+How to read it: if that gain's CI includes zero, adding variance and fatigue (γ, φ > 0) does
+not improve on plain similarity for predicting single clicks. The extra terms still matter
+for how reading evolves over a session, which single impressions cannot show.
+
+---
+
+## 6. Suggested Text for the Report
+
+> *"We model news readers with the Bayesian-learning agent model of Aridor et al. (2020),
+> extended to real articles from the Microsoft News Dataset (MIND). Each reader's click
+> history is split chronologically: earlier clicks define their prior beliefs and their 10
+> most recent clicks define their current true tastes, so the gap between belief and truth
+> reflects real drift in interests. Prior uncertainty shrinks with history length,
+> s_i² = s_0² · n_0 / (n_0 + n_i). Readers differ in risk aversion and fatigue sensitivity
+> (cautious, explorer, easily bored, average). Fatigue accumulates with exposure to
+> similar articles and decays over rounds; [report the shuffled-baseline result from
+> fatigue_calibration.md here]. Scoring real MIND dev impressions with the simulator's choice
+> rule gives a held-out ROC-AUC of [X] (popularity [Y], random [Z]); [give the held-out gain
+> of the best (γ, φ) over plain similarity and say whether its CI includes zero]."*

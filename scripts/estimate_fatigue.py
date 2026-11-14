@@ -1,219 +1,255 @@
-"""Empirical calibration of fatigue from real MIND click logs.
+"""Estimate fatigue (satiation) from real MIND click histories.
 
-Research question:
-In real MIND click logs, how does a user's probability of consuming another
-article from the same subcategory change after several consecutive same-subcategory
-reads? How can this empirically calibrate the simulation's fatigue strength (phi)
-and fatigue decay rate?
+Two analyses, both on users' ordered click histories:
 
-Outputs:
-- reports/fatigue_calibration.md
-- reports/figures/fatigue_calibration.png
-- reports/fatigue_calibration.csv
+1. Streak analysis with a shuffled baseline.
+   P(next click is in the same subcategory | k consecutive same-subcategory
+   clicks), compared with the same quantity after randomly shuffling each
+   user's history. Shuffling keeps each user's topic mix but destroys order,
+   so: observed < shuffled means satiation (fatigue); observed > shuffled
+   means momentum (binge reading). Raw continuation probabilities alone mix
+   these with how concentrated each user's interests are.
+
+2. Conditional choice model, without look-ahead.
+   For each user, the first half of their history sets their baseline topic
+   preference; we then predict each click in the second half. For every
+   observed click (label 1) we sample one subcategory the user did not choose
+   (label 0) from their baseline topics, and fit
+       logit P(choose s) = b0 + b_pref * pref(s) + b_fatigue * stock(s)
+   where stock(s) = sum over earlier clicks of decay^age * 1[click was in s].
+   The decay is chosen by held-out log-likelihood over a grid.
+   Because stock(s) also partly tracks how often a user reads s, b_fatigue is
+   biased upwards even when order carries no information. We therefore fit the
+   same model on each user's history in shuffled order (same topic mix, no
+   order) and report the ORDER EFFECT = b_fatigue(observed) - b_fatigue(shuffled).
+   Order effect < 0 means satiation; > 0 means momentum.
+
+The simulator's phi is in different units (utility per unit of fatigue stock
+on the z-scored belief scale), so the estimate does not map one-to-one onto phi.
+We report the decay directly and the odds effect of one recent read; the
+simulator's phi values remain modelling choices, informed by the sign and size
+of this effect.
+
+Outputs (in --out-dir, default reports/):
+    fatigue_streaks.csv, fatigue_decay_fit.csv, fatigue_calibration.md,
+    figures/fatigue_calibration.png
+
+    python scripts/estimate_fatigue.py
 """
 import argparse
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-import yaml
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.data.store import MindStore
+from src.data.store import MindStore  # noqa: E402
+
+DECAYS = [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
 
 
-def analyze_streak_satiation(store: MindStore, max_users: int = 15000):
-    """Measure how probability of clicking same subcategory evolves as streak length grows."""
-    news_subcat = dict(zip(store.articles["news_id"], store.articles["subcategory"]))
-    
-    streak_counts = defaultdict(int)
-    streak_continues = defaultdict(int)
-    
-    uids = list(store.histories.keys())[:max_users]
-    for u in uids:
-        hist = store.history(u)
-        subcats = [news_subcat.get(n) for n in hist if n in news_subcat]
-        if len(subcats) < 4:
-            continue
-            
-        cur_sub = None
-        cur_len = 0
-        for s in subcats:
-            if s == cur_sub:
-                cur_len += 1
+def user_sequences(store, min_len, max_users, seed):
+    sub = dict(zip(store.articles["news_id"], store.articles["subcategory"]))
+    uids = [u for u in store.user_ids() if len(store.history(u)) >= min_len]
+    rng = np.random.default_rng(seed)
+    if len(uids) > max_users:
+        uids = list(rng.choice(uids, size=max_users, replace=False))
+    return [[sub[n] for n in store.history(u) if n in sub] for u in uids]
+
+
+def streak_counts(seqs, max_k):
+    tot, cont = np.zeros(max_k + 1), np.zeros(max_k + 1)
+    for s in seqs:
+        run = 1
+        for a, b in zip(s[:-1], s[1:]):
+            k = min(run, max_k)
+            tot[k] += 1
+            if a == b:
+                cont[k] += 1
+                run += 1
             else:
-                if cur_sub is not None:
-                    for k in range(1, cur_len):
-                        streak_counts[k] += 1
-                        streak_continues[k] += 1
-                    streak_counts[cur_len] += 1
-                cur_sub = s
-                cur_len = 1
-        if cur_sub is not None:
-            for k in range(1, cur_len):
-                streak_counts[k] += 1
-                streak_continues[k] += 1
-            streak_counts[cur_len] += 1
-            
+                run = 1
+    return tot, cont
+
+
+def streak_table(seqs, max_k=6, n_shuffles=5, seed=0):
+    tot, cont = streak_counts(seqs, max_k)
+    rng = np.random.default_rng(seed)
+    st, sc = np.zeros(max_k + 1), np.zeros(max_k + 1)
+    for _ in range(n_shuffles):
+        t, c = streak_counts([list(rng.permutation(s)) for s in seqs], max_k)
+        st += t
+        sc += c
     rows = []
-    for k in range(1, 8):
-        if streak_counts[k] >= 50:
-            cont = streak_continues[k]
-            tot = streak_counts[k]
-            p_cont = cont / tot
-            p_switch = 1.0 - p_cont
-            rows.append({
-                "streak_length_k": k,
-                "occurrences": tot,
-                "continued_streak": cont,
-                "p_continue": float(p_cont),
-                "p_switch_topic": float(p_switch)
-            })
+    for k in range(1, max_k + 1):
+        if tot[k] < 30 or st[k] < 30:
+            continue
+        p, q = cont[k] / tot[k], sc[k] / st[k]
+        rows.append({"streak_k": k if k < max_k else f"{max_k}+", "transitions": int(tot[k]),
+                     "p_continue_observed": p, "p_continue_shuffled": q,
+                     "ratio_observed_to_shuffled": p / q if q > 0 else np.nan})
     return pd.DataFrame(rows)
 
 
-def fit_fatigue_regression(store: MindStore, max_users: int = 5000, decay: float = 0.8):
-    """Estimate discrete choice model of subcategory choice under decaying exposure stock.
-    Utility: u(s) = beta_pref * P(s) - phi_eff * Stock(s).
-    """
-    news_subcat = dict(zip(store.articles["news_id"], store.articles["subcategory"]))
-    uids = list(store.histories.keys())[:max_users]
-    
-    X_data = []
-    y_data = []
-    rng = np.random.default_rng(42)
-    
-    for u in uids:
-        hist = store.history(u)
-        sc = [news_subcat.get(n) for n in hist if n in news_subcat]
-        if len(sc) < 15:
+def choice_events(seqs, decay, seed):
+    """Features [pref, stock] and labels from the second half of each history."""
+    rng = np.random.default_rng(seed)
+    X, y = [], []
+    for s in seqs:
+        half = len(s) // 2
+        base = Counter(s[:half])
+        topics = list(base)
+        if len(topics) < 2:
             continue
-        pref = Counter(sc)
-        tot = len(sc)
-        p_base = {k: v / tot for k, v in pref.items()}
-        
-        fatigue = Counter()
-        for s in sc:
-            f_s = fatigue[s]
-            base_s = p_base[s]
-            X_data.append([base_s, f_s])
-            y_data.append(1)  # Chosen article
-            
-            # Contrast with unchosen candidate that the user also enjoys
-            candidates = [k for k in p_base if k != s]
-            if candidates:
-                neg_s = rng.choice(candidates)
-                X_data.append([p_base[neg_s], fatigue[neg_s]])
-                y_data.append(0)
-                
-            for k in list(fatigue.keys()):
-                fatigue[k] *= decay
-            fatigue[s] += 1.0
+        pref = {t: c / half for t, c in base.items()}
+        stock = Counter()
+        for i, chosen in enumerate(s):
+            if i >= half and chosen in pref:
+                others = [t for t in topics if t != chosen]
+                neg = others[rng.integers(len(others))]
+                X += [[pref[chosen], stock[chosen]], [pref[neg], stock[neg]]]
+                y += [1, 0]
+            for t in list(stock):
+                stock[t] *= decay
+            stock[chosen] += 1.0
+    return np.array(X, float), np.array(y, float)
 
-    X = np.array(X_data)
-    y = np.array(y_data)
-    clf = LogisticRegression()
-    clf.fit(X, y)
-    
-    beta_pref = float(clf.coef_[0, 0])
-    beta_fatigue = float(clf.coef_[0, 1])
-    relative_fatigue = float(abs(beta_fatigue / beta_pref))
-    
-    return {
-        "decay_evaluated": decay,
-        "beta_baseline_preference": beta_pref,
-        "beta_fatigue_penalty": beta_fatigue,
-        "relative_fatigue_strength": relative_fatigue,
-        "observations": len(y)
-    }
+
+def fit_logit(X, y, iters=50):
+    """Unpenalised logistic regression (Newton), with standard errors."""
+    Xd = np.column_stack([np.ones(len(X)), X])
+    w = np.zeros(Xd.shape[1])
+    for _ in range(iters):
+        p = 1 / (1 + np.exp(-Xd @ w))
+        H = Xd.T @ (Xd * (p * (1 - p))[:, None]) + 1e-9 * np.eye(len(w))
+        step = np.linalg.solve(H, Xd.T @ (y - p))
+        w += step
+        if np.abs(step).max() < 1e-8:
+            break
+    p = 1 / (1 + np.exp(-Xd @ w))
+    H = Xd.T @ (Xd * (p * (1 - p))[:, None])
+    se = np.sqrt(np.diag(np.linalg.inv(H)))
+    return w, se
+
+
+def loglik(w, X, y):
+    p = np.clip(1 / (1 + np.exp(-np.column_stack([np.ones(len(X)), X]) @ w)), 1e-12, 1 - 1e-12)
+    return float((y * np.log(p) + (1 - y) * np.log(1 - p)).mean())
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--out-dir", default="reports")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--out-dir", default="reports")
+    ap.add_argument("--max-users", type=int, default=20000)
+    ap.add_argument("--min-history", type=int, default=10)
+    ap.add_argument("--seed", type=int, default=42)
+    args = ap.parse_args()
 
     store = MindStore(args.config)
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fig_dir = out_dir / "figures"
-    fig_dir.mkdir(parents=True, exist_ok=True)
+    seqs = user_sequences(store, args.min_history, args.max_users, args.seed)
+    out = Path(args.out_dir)
+    (out / "figures").mkdir(parents=True, exist_ok=True)
 
-    print("Analyzing subcategory streak satiation on MIND click histories...")
-    df_streak = analyze_streak_satiation(store)
-    df_streak.to_csv(out_dir / "fatigue_calibration.csv", index=False)
+    streaks = streak_table(seqs, seed=args.seed)
+    streaks.to_csv(out / "fatigue_streaks.csv", index=False)
 
-    print("Fitting discrete-choice fatigue regression...")
-    reg_res = fit_fatigue_regression(store, decay=0.8)
+    rng = np.random.default_rng(args.seed)
+    idx = rng.permutation(len(seqs))
+    train = [seqs[i] for i in idx[: int(0.7 * len(seqs))]]
+    test = [seqs[i] for i in idx[int(0.7 * len(seqs)):]]
+    shuf = [list(rng.permutation(s)) for s in train]
+    fits = []
+    for d in DECAYS:
+        Xtr, ytr = choice_events(train, d, args.seed)
+        Xte, yte = choice_events(test, d, args.seed + 1)
+        Xsh, ysh = choice_events(shuf, d, args.seed)
+        w, se = fit_logit(Xtr, ytr)
+        ws, ses = fit_logit(Xsh, ysh)
+        eff, eff_se = w[2] - ws[2], float(np.hypot(se[2], ses[2]))
+        fits.append({"decay": d, "heldout_loglik": loglik(w, Xte, yte),
+                     "b_pref": w[1], "b_pref_se": se[1],
+                     "b_fatigue_observed": w[2], "b_fatigue_observed_se": se[2],
+                     "b_fatigue_shuffled": ws[2], "b_fatigue_shuffled_se": ses[2],
+                     "order_effect": eff, "order_effect_se": eff_se,
+                     "order_effect_odds_ratio": float(np.exp(eff)),
+                     "train_events": len(ytr), "test_events": len(yte)})
+    fit = pd.DataFrame(fits)
+    fit.to_csv(out / "fatigue_decay_fit.csv", index=False)
+    best = fit.loc[fit["heldout_loglik"].idxmax()]
+    z = best["order_effect"] / best["order_effect_se"]
 
-    # Plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-
-    ax1.plot(df_streak["streak_length_k"], df_streak["p_switch_topic"] * 100, marker="o", color="#C0504D", lw=2)
-    ax1.set_title("Topic Switching Probability vs. Same-Subcategory Streak", fontsize=11)
-    ax1.set_xlabel("Consecutive Articles Read in Same Subcategory (k)", fontsize=10)
-    ax1.set_ylabel("Probability of Switching Topic (%)", fontsize=10)
-    ax1.grid(alpha=0.3)
-    ax1.set_ylim(0, 100)
-
-    # Decaying stock illustration
-    rounds = np.arange(1, 11)
-    decay_levels = [0.5, 0.8, 0.95]
-    for d in decay_levels:
-        stock = [sum(d ** (t - i) for i in range(1, t + 1)) for t in rounds]
-        ax2.plot(rounds, stock, marker="s", label=f"Decay = {d}")
-    ax2.set_title("Simulated Fatigue Buildup (Same Item/Neighbourhood)", fontsize=11)
-    ax2.set_xlabel("Consecutive Rounds Consumed", fontsize=10)
-    ax2.set_ylabel("Accumulated Fatigue Stock", fontsize=10)
-    ax2.grid(alpha=0.3)
-    ax2.legend()
-
+    fig, ax = plt.subplots(1, 3, figsize=(15, 4.2))
+    ks = streaks["streak_k"].astype(str)
+    ax[0].plot(ks, 100 * streaks["p_continue_observed"], "o-", label="observed order")
+    ax[0].plot(ks, 100 * streaks["p_continue_shuffled"], "s--", label="shuffled order")
+    ax[0].set(xlabel="consecutive same-subcategory clicks (k)",
+              ylabel="P(next click same subcategory) %", title="Streak continuation")
+    ax[0].legend()
+    ax[1].plot(fit["decay"], fit["heldout_loglik"], "o-")
+    ax[1].axvline(best["decay"], ls=":", c="grey")
+    ax[1].set(xlabel="fatigue decay", ylabel="held-out log-likelihood", title="Choosing the decay")
+    ax[2].errorbar(fit["decay"], fit["order_effect"], yerr=1.96 * fit["order_effect_se"], fmt="o-", capsize=3)
+    ax[2].axhline(0, c="grey", lw=0.8)
+    ax[2].set(xlabel="fatigue decay", ylabel="order effect (95% CI)",
+              title="Recent exposure: observed minus shuffled")
+    for a in ax:
+        a.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(fig_dir / "fatigue_calibration.png", dpi=130)
+    fig.savefig(out / "figures" / "fatigue_calibration.png", dpi=130)
     plt.close(fig)
 
-    # Markdown summary
-    md = f"""# Empirical Calibration of Fatigue from Real MIND Click Logs
+    r1 = streaks.iloc[1] if len(streaks) > 1 else streaks.iloc[0]
+    direction = ("below the shuffled baseline (satiation)" if r1["ratio_observed_to_shuffled"] < 1
+                 else "above the shuffled baseline (momentum: readers binge a topic before moving on)")
+    md = f"""# Fatigue estimated from MIND click histories
 
-## 1. Research Question
-How does reading consecutive articles in the same subcategory alter the empirical probability of continuing vs. switching topics, and how can this calibrate our agent simulation?
+**Data.** {len(seqs):,} users with at least {args.min_history} clicks.
 
-## 2. Streak Satiation Analysis
+## 1. Streaks versus a shuffled baseline
 
-| Consecutive Reads ($k$) | Total Occurrences | P(Continue Same Subcategory) | P(Switch Topic) |
-|---|---|---|---|
+Shuffling each user's history keeps their topic mix but removes order. Continuation
+below the shuffled value indicates satiation, above it indicates momentum.
+
+{streaks.round(4).to_string(index=False)}
+
+After k = {r1['streak_k']} same-subcategory clicks, continuation is
+{r1['ratio_observed_to_shuffled']:.2f}x the shuffled value, i.e. {direction}.
+The raw switch rate after one click mostly reflects how many subcategories exist
+and how spread out each user's interests are, not fatigue.
+
+## 2. Choice model without look-ahead
+
+Baseline preferences come from the first half of each history; clicks in the second
+half are predicted. Decay chosen by held-out log-likelihood (70/30 user split).
+
+{fit.round(4).to_string(index=False)}
+
+**Best decay: {best['decay']:g}.** Order effect = {best['order_effect']:.3f}
+(SE {best['order_effect_se']:.3f}, z = {z:.1f}): beyond what a user's topic mix
+explains, one recent read in a subcategory multiplies the odds of choosing it again by
+{best['order_effect_odds_ratio']:.3f}. {"This is satiation (fatigue)." if best['order_effect'] < 0 and z < -2 else "This is momentum (repeat reading)." if z > 2 else "No significant order effect."}
+
+## 3. Use in the simulator
+
+- The decay estimate ({best['decay']:g}) can inform `fatigue_decay`.
+- The order effect is on a logit scale, not the simulator's utility scale, so it does
+  not give phi directly. Its sign says whether fatigue (or momentum) is present in real
+  reading; the phi values used (and the reader-type values) are modelling assumptions,
+  and results should be reported across a range of phi, including phi = 0.
+- Caveats: MIND histories are click logs from a live recommender, so order also
+  reflects what was shown; subcategory is a coarse proxy for similarity.
 """
-    for _, row in df_streak.iterrows():
-        md += f"| {int(row['streak_length_k'])} | {int(row['occurrences']):,} | {row['p_continue']:.2%} | **{row['p_switch_topic']:.2%}** |\n"
-
-    md += f"""
-*Finding*: Readers exhibit strong variety-seeking. After 1 article in a subcategory, readers switch to another topic **{df_streak.loc[0, 'p_switch_topic']:.1%}** of the time.
-
-## 3. Discrete-Choice Fatigue Model
-We model the log-odds of clicking article of subcategory $s$ as a function of baseline affinity and accumulated recent exposure stock $F_t(s) = \\sum_{{\\tau < t}} \\delta^{{t - \\tau}} \\mathbb{{I}}(\\text{{click}}_\\tau = s)$:
-
-$$\\log \\frac{{P(\\text{{click}} s)}}{{1 - P(\\text{{click}} s)}} = \\beta_{{\\text{{pref}}}} \\cdot P_{{\\text{{base}}}}(s) + \\beta_{{\\text{{fatigue}}}} \\cdot F_t(s)$$
-
-### Calibration Results:
-- **Baseline Preference Weight ($\\beta_{{\\text{{pref}}}}$)**: `{reg_res['beta_baseline_preference']:.3f}`
-- **Fatigue Penalty Coefficient ($\\beta_{{\\text{{fatigue}}}}$)**: `{reg_res['beta_fatigue_penalty']:.3f}`
-- **Decay Rate ($\\delta$)**: `{reg_res['decay_evaluated']:.2f}`
-- **Effective Relative Fatigue Strength**: $\\phi \\approx {reg_res['relative_fatigue_strength']:.3f}$
-
-### Recommendation for Simulator:
-- **Moderate / Calibrated Fatigue**: $\\phi = 0.5$, $\\text{{decay}} = 0.8$.
-- **High Fatigue (Easily Bored)**: $\\phi = 1.5$, $\\text{{decay}} = 0.6$.
-- **Low Fatigue (Explorer / Habitual)**: $\\phi = 0.2$, $\\text{{decay}} = 0.8$.
-"""
-    (out_dir / "fatigue_calibration.md").write_text(md)
-    print(f"Calibration completed and saved to {out_dir / 'fatigue_calibration.md'}")
+    (out / "fatigue_calibration.md").write_text(md)
+    print(streaks.round(4).to_string(index=False))
+    print(fit[["decay", "heldout_loglik", "b_fatigue_observed", "b_fatigue_shuffled",
+               "order_effect", "order_effect_se"]].round(4).to_string(index=False))
+    print(f"Best decay {best['decay']:g}; order effect {best['order_effect']:.3f} (z={z:.1f})")
 
 
 if __name__ == "__main__":
