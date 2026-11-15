@@ -1,0 +1,533 @@
+diff --git a/README.md b/README.md
+index 0890eb4..7c967da 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,8 @@
+ # Weave: filter bubbles and fatigue in news recommendation
+ 
++Person B's recommender input contract, defaults, and checks are in
++[docs/recommenders.md](docs/recommenders.md).
++
+ Agent-based simulation (Aridor, Goncalves & Sikdar, "Deconstructing the Filter
+ Bubble") extended to news (MIND-small) with user fatigue, used to evaluate
+ filter bubbles, echo chambers and fatigue under different recommenders.
+diff --git a/config.yaml b/config.yaml
+index 041d9a2..877d53b 100644
+--- a/config.yaml
++++ b/config.yaml
+@@ -11,6 +11,12 @@ embedding:
+ users:
+   min_history: 10   # only keep users with at least this many past clicks
+ 
++recommenders:
++  K: 10
++  prior_weight: 1.0      # total popularity pseudocount mass before simulated reads
++  profile_weight: 1.0    # initial visible profile counts as one normalized article
++  diversity_weight: 0.3  # MMR penalty; 0 exactly matches content-based ranking
++
+ # ---- Step 1: reproduce Aridor et al. on the circle --------------------------
+ aridor:
+   N: 200          # items on the circle (paper)
+diff --git a/requirements.txt b/requirements.txt
+index 8dea148..e438f71 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,11 @@
++# Python 3.10+; simulation, recommenders, and experiment outputs.
+ numpy
+ pandas
+ pyyaml
+ matplotlib
++
++# MIND article embeddings.
+ sentence-transformers
++
++# Simulator and recommender tests.
+ pytest
+diff --git a/scripts/run_news.py b/scripts/run_news.py
+index 0b505c4..19fa1ab 100644
+--- a/scripts/run_news.py
++++ b/scripts/run_news.py
+@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
+ import yaml
+ 
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+-from src.data.store import MindStore
+ from src.sim.experiment import run_grid, summarise
+ from src.sim.news_users import attach_user_pool, sample_news_users
+ from src.sim.recommenders import REGISTRY
++from src.sim.run_bundle import RunBundle
+ from src.sim.world import describe, news_world
+ 
+ METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
+@@ -23,6 +23,7 @@ METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
+ def build_world(store, cfg, rho):
+     w = news_world(store, N=cfg["N"], rho=rho, pca_dims=cfg["pca_dims"],
+                    only_clicked=cfg["only_clicked"], seed=cfg["seed"])
++    w.article_metadata = store.articles.set_index("news_id", drop=False).loc[w.ids].to_dict("records")
+     return attach_user_pool(w, store, seed=cfg["seed"])
+ 
+ 
+@@ -60,6 +61,7 @@ def plot(s, curves, path, group):
+             a.set_xlabel("round"); a.grid(alpha=0.3)
+     fig.tight_layout()
+     fig.savefig(path, dpi=130)
++    plt.close(fig)
+ 
+ 
+ def main():
+@@ -67,22 +69,50 @@ def main():
+     ap.add_argument("--config", default="config.yaml")
+     ap.add_argument("--workers", type=int, default=1)
+     ap.add_argument("--n-pop", type=int, default=None)
+-    ap.add_argument("--recommenders", nargs="*", default=None,
++    ap.add_argument("--recommenders", nargs="*", default=None, choices=list(REGISTRY),
+                     help=f"slate recommenders to compare: {list(REGISTRY)}")
++    weights = ap.add_mutually_exclusive_group()
++    weights.add_argument("--mmr-diversity-weight", type=float, default=None,
++                    help="MMR redundancy penalty in [0, 1]; zero equals content-based")
++    weights.add_argument("--mmr-diversity-weights", type=float, nargs="+", default=None,
++                        help="Save a comparison of several MMR penalty settings")
+     ap.add_argument("--out", default="results/news")
+     args = ap.parse_args()
+ 
+-    full = yaml.safe_load(open(args.config))
++    full = yaml.safe_load(Path(args.config).read_text())
++    with RunBundle(args.out, full, vars(args), "mind") as bundle:
++        print("Saving complete MIND run to:", bundle.path)
++        execute_news(args, full, bundle.path)
++    print("Saved run:", bundle.path)
++
++
++def execute_news(args, full, out):
++
++    from src.data.store import MindStore
++
+     cfg = full["news"]
+     store = MindStore(args.config)
+-    out = Path(args.out)
+-    out.mkdir(parents=True, exist_ok=True)
+ 
+     grid = dict(cfg["grid"])
+     recs, group = None, "info"
+     if args.recommenders:
+-        K = full.get("recommenders", {}).get("K", 10)
+-        recs = {r: partial(REGISTRY[r], K=K) for r in args.recommenders}
++        settings = full.get("recommenders", {})
++        recs = {}
++        for r in args.recommenders:
++            options = {"K": settings.get("K", 10)}
++            if r in ("popularity", "content", "mmr"):
++                options["prior_weight"] = settings.get("prior_weight", 1.0)
++            if r in ("content", "mmr"):
++                options["profile_weight"] = settings.get("profile_weight", 1.0)
++            if r == "mmr":
++                options["diversity_weight"] = args.mmr_diversity_weight \
++                    if args.mmr_diversity_weight is not None \
++                    else settings.get("diversity_weight", 0.3)
++                if args.mmr_diversity_weights is not None:
++                    for weight in args.mmr_diversity_weights:
++                        recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
++                    continue
++            recs[r] = partial(REGISTRY[r], **options)
+         grid["info"] = ["none"]
+         group = "recommender"
+ 
+@@ -96,13 +126,15 @@ def main():
+                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
+                           seed=cfg["seed"], recommenders=recs,
+                           users_fn=partial(sample_news_users, U=cfg["U"]),
+-                          workers=args.workers, keep_curves=True)
+-    df.to_csv(out / "populations.csv", index=False)
+-    curves.to_csv(out / "curves.csv", index=False)
++                          workers=args.workers, keep_curves=True, archive_dir=out)
++    df.to_csv(out / "original_populations.csv", index=False)
++    curves.to_csv(out / "original_curves.csv", index=False)
+     by = [k for k in grid if k != "info"] + ["info", "recommender"]
+     s = summarise(df, by, METRICS)
+-    s.to_csv(out / "summary.csv", index=False)
+-    plot(s, curves, out / "figures.png", group)
++    s.to_csv(out / "original_summary.csv", index=False)
++    plot(s, curves, out / "original_figures.png", group)
++    from src.sim.reporting import rebuild_report
++    rebuild_report(out)
+     print(s.groupby(group)[["cat_entropy", "homogeneity", "welfare_net", "fatigue"]]
+           .mean().round(3))
+     print("Saved to", out)
+diff --git a/src/sim/experiment.py b/src/sim/experiment.py
+index 3e53289..968262e 100644
+--- a/src/sim/experiment.py
++++ b/src/sim/experiment.py
+@@ -7,6 +7,7 @@ Output (one row per population, metrics averaged over its users):
+ import itertools
+ import zlib
+ from concurrent.futures import ProcessPoolExecutor
++from pathlib import Path
+ 
+ import numpy as np
+ import pandas as pd
+@@ -14,6 +15,7 @@ import pandas as pd
+ from .metrics import homogeneity, time_curves, user_metrics
+ from .params import Params
+ from .simulate import run_population
++from .recommenders import NoRecommender
+ 
+ 
+ def expand_grid(grid: dict) -> list[dict]:
+@@ -29,15 +31,37 @@ def _init(worlds):
+ 
+ 
+ def _one(job):
+-    (rho, pdict, U, seed, rec_factory, users_fn, pop_id, keep_curves) = job
++    (rho, pdict, U, seed, rec_factory, users_fn, pop_id, keep_curves,
++     archive_dir, job_id, label) = job
+     world = _WORLDS[rho]
+     p = Params(**pdict)
+     rng = np.random.default_rng(seed)
+     profiles, seen = users_fn(world, rng) if users_fn else (None, None)
+-    rec = rec_factory() if rec_factory else None
+-    run = run_population(world, p, U, rng, rec, profiles, seen)
++    rec = rec_factory() if rec_factory else NoRecommender()
++    archive = None
++    if archive_dir is not None:
++        from .artifacts import PopulationArchive
++        settings = {k: getattr(rec, k) for k in
++                    ("K", "prior_weight", "profile_weight", "diversity_weight")
++                    if hasattr(rec, k)}
++        archive = PopulationArchive(Path(archive_dir) / "populations" / f"job_{job_id:06d}",
++                                    metadata={"job_id": job_id, "population": pop_id,
++                                              "pop": pop_id, "seed": seed, "rho": rho,
++                                              "recommender": label or rec.name,
++                                              "algorithm": rec.name, "params": p.as_dict(),
++                                              "data_kind": "mind" if world.kind == "news" else world.kind,
++                                              "user_ids": getattr(world, "sampled_user_ids", None),
++                                              "initial_histories": getattr(world, "sampled_histories", None),
++                                              "recommender_settings": settings})
++    try:
++        run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive)
++    except Exception as error:
++        if archive is not None:
++            archive.fail(error)
++        raise
+     um = user_metrics(world, run)
+-    row = {**pdict, "recommender": rec.name if rec else "none", "pop": pop_id,
++    row = {**pdict, "recommender": label or rec.name, "pop": pop_id,
++           "seed": seed, "job_id": job_id,
+            **um.drop(columns=["user"]).mean(numeric_only=True).to_dict(),
+            "homogeneity": homogeneity(run)}
+     curves = None
+@@ -50,13 +74,15 @@ def _one(job):
+ 
+ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
+              U: int = 100, seed: int = 0, recommenders: dict | None = None,
+-             users_fn=None, workers: int = 1, keep_curves: bool = False):
++             users_fn=None, workers: int = 1, keep_curves: bool = False,
++             archive_dir=None):
+     """world_fn(rho) -> World (rebuilt only when rho changes).
+     grid: {param_name: [values]}; base: fixed Params overrides.
+     recommenders: {name: factory()} or None for the paper's no-slate setup.
+     users_fn(world, rng) -> (profiles, seen) for grounded news users, or None.
+     With workers > 1, recommender factories and users_fn must be top-level
+     functions/classes (or functools.partial of them), not lambdas.
++    archive_dir: optional unique run directory for all population artifacts.
+     """
+     base = base or {}
+     recs = recommenders or {None: None}
+@@ -76,7 +102,9 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
+                 key = repr(sorted((a, b) for a, b in {**pdict, "rho": rho}.items()
+                                   if a != "info"))
+                 s = seed * 1_000_003 + zlib.crc32(key.encode()) % 100_000 * 1000 + k
+-                jobs.append((rho, dict(pdict), U, s, rfac, users_fn, k, keep_curves))
++                jobs.append((rho, dict(pdict), U, s, rfac, users_fn, k, keep_curves,
++                             str(archive_dir) if archive_dir is not None else None,
++                             len(jobs), rname))
+ 
+     _init(worlds)
+     if workers > 1:
+diff --git a/src/sim/news_users.py b/src/sim/news_users.py
+index ad89eee..9b54b8d 100644
+--- a/src/sim/news_users.py
++++ b/src/sim/news_users.py
+@@ -19,13 +19,16 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0):
+     pos = {nid: j for j, nid in enumerate(world.ids)}
+     profiles = np.zeros((len(uids), store.embeddings.shape[1]), np.float32)
+     seen = np.zeros((len(uids), world.N), bool)
++    histories = []
+     for k, u in enumerate(uids):
+         hist = store.history(u)
++        histories.append(list(hist))
+         profiles[k] = store.embeddings[[store.index[n] for n in hist]].mean(0)
+         for n in hist:
+             if n in pos:
+                 seen[k, pos[n]] = True
+-    world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen}
++    world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen,
++                       "histories": histories}
+     return world
+ 
+ 
+@@ -33,4 +36,7 @@ def sample_news_users(world, rng, U: int):
+     """users_fn for run_grid: returns (profiles [U, dim], seen [U, N])."""
+     pool = world.user_pool
+     idx = rng.choice(len(pool["ids"]), size=U, replace=False)
++    world.sampled_user_ids = pool["ids"][idx].tolist()
++    world.sampled_histories = [pool["histories"][i] for i in idx] \
++        if "histories" in pool else None
+     return pool["profiles"][idx], pool["seen"][idx]
+diff --git a/src/sim/recommenders.py b/src/sim/recommenders.py
+index 6cb18a3..d38e2b7 100644
+--- a/src/sim/recommenders.py
++++ b/src/sim/recommenders.py
+@@ -32,6 +32,8 @@ class Recommender:
+     name = "base"
+ 
+     def __init__(self, K: int = 10):
++        if isinstance(K, bool) or not isinstance(K, (int, np.integer)) or K < 0:
++            raise ValueError("K must be a nonnegative integer")
+         self.K = K
+ 
+     def reset(self, world: World, U: int, rng: np.random.Generator):
+@@ -51,12 +53,22 @@ class Recommender:
+ 
+     # helper for subclasses: top-K available items from a score matrix
+     def top_k(self, scores: np.ndarray, available: np.ndarray) -> np.ndarray:
+-        s = np.where(available, scores, -np.inf)
++        s = np.where(available & np.isfinite(scores), scores, -np.inf)
++        out = np.full((s.shape[0], self.K), -1, dtype=int)
+         k = min(self.K, s.shape[1])
+-        idx = np.argpartition(-s, k - 1, axis=1)[:, :k]
+-        order = np.argsort(-np.take_along_axis(s, idx, 1), axis=1)
+-        idx = np.take_along_axis(idx, order, 1)
+-        return np.where(np.isfinite(np.take_along_axis(s, idx, 1)), idx, -1)
++        # Stable sorting breaks ties by catalogue index, including at the cutoff.
++        idx = np.argsort(-s, axis=1, kind="stable")[:, :k]
++        out[:, :k] = np.where(np.isfinite(np.take_along_axis(s, idx, 1)), idx, -1)
++        return out
++
++    def eligible(self, state: SimState) -> np.ndarray:
++        if state.available.shape != (self.U, self.world.N):
++            raise ValueError("available must have shape [U, N]")
++        if state.active.shape != (self.U,):
++            raise ValueError("active must have shape [U]")
++        if state.available.dtype != bool or state.active.dtype != bool:
++            raise ValueError("available and active must be boolean arrays")
++        return state.available & state.active[:, None]
+ 
+ 
+ class NoRecommender(Recommender):
+@@ -74,7 +86,150 @@ class RandomRecommender(Recommender):
+ 
+     def recommend(self, state):
+         scores = self.rng.random(state.available.shape)
+-        return self.top_k(scores, state.available)
++        return self.top_k(scores, self.eligible(state))
++
++
++class PopularityRecommender(Recommender):
++    """Rank by simulated read counts plus an optional MIND popularity prior.
++
++    The prior is normalized to total mass `prior_weight`; each observed read
++    adds one count, regardless of the utility reported for that read.
++    """
++    name = "popularity"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0):
++        super().__init__(K)
++        if not np.isfinite(prior_weight) or prior_weight < 0:
++            raise ValueError("prior_weight must be finite and nonnegative")
++        self.prior_weight = prior_weight
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        prior = np.zeros(world.N) if world.popularity is None \
++            else np.array(world.popularity, dtype=float, copy=True)
++        if prior.shape != (world.N,) or not np.isfinite(prior).all() or (prior < 0).any():
++            raise ValueError("popularity must be finite, nonnegative, with shape [N]")
++        # Scale before summing to avoid overflow for large valid counts.
++        if prior.size and prior.max() > 0:
++            prior /= prior.max()
++            prior /= prior.sum()
++        self.counts = prior * self.prior_weight
++
++    def recommend(self, state):
++        return self.top_k(self.counts, self.eligible(state))
++
++    def observe(self, state, users, items, feedback):
++        np.add.at(self.counts, items, 1.0)
++
++
++def _unit_rows(vectors):
++    """Normalize finite vectors; retain zero rows as zero vectors."""
++    # Scaling first avoids overflow when squaring large finite components.
++    scale = np.max(np.abs(vectors), axis=1, keepdims=True)
++    scaled = vectors / np.where(scale > 0, scale, 1)
++    norm = np.linalg.norm(scaled, axis=1, keepdims=True)
++    return scaled / np.where(norm > 0, norm, 1)
++
++
++class ContentBasedRecommender(PopularityRecommender):
++    """Cosine relevance to a visible initial profile plus simulated reads.
++
++    `extra['profiles']` is optional [U, D] public profile data. Each profile
++    contributes `profile_weight` normalized vectors; every simulated read
++    contributes one normalized article vector. A zero centroid uses popularity.
++    Feedback values do not weight this positive-interaction content model.
++    """
++    name = "content"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0,
++                 profile_weight: float = 1.0):
++        super().__init__(K, prior_weight)
++        if not np.isfinite(profile_weight) or profile_weight < 0:
++            raise ValueError("profile_weight must be finite and nonnegative")
++        self.profile_weight = profile_weight
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        if world.profile_vecs is None:
++            raise ValueError("content and MMR require world.profile_vecs [N, D]")
++        E = np.asarray(world.profile_vecs, dtype=float)
++        if E.ndim != 2 or E.shape[0] != world.N or E.shape[1] == 0 \
++                or not np.isfinite(E).all():
++            raise ValueError("profile_vecs must be finite with shape [N, D], D > 0")
++        self.embeddings = _unit_rows(E)
++
++    def relevance(self, state):
++        D = self.embeddings.shape[1]
++        centroid = np.zeros((self.U, D))
++        profiles = state.extra.get("profiles")
++        if profiles is not None:
++            profiles = np.asarray(profiles, dtype=float)
++            if profiles.shape != (self.U, D) or not np.isfinite(profiles).all():
++                raise ValueError("extra['profiles'] must be finite with shape [U, D]")
++            centroid += self.profile_weight * _unit_rows(profiles)
++        if len(state.history) != self.U:
++            raise ValueError("history must contain one list per user")
++        for u, history in enumerate(state.history):
++            if not len(history):
++                continue
++            idx = np.asarray(history)
++            if idx.ndim != 1 or not np.issubdtype(idx.dtype, np.integer) \
++                    or (idx < 0).any() or (idx >= self.world.N).any():
++                raise ValueError("history must contain catalogue indices in [0, N)")
++            centroid[u] += self.embeddings[idx].sum(axis=0)
++        has_profile = np.any(centroid != 0, axis=1)
++        scores = np.clip(_unit_rows(centroid) @ self.embeddings.T, -1, 1)
++        prior = self.counts / self.counts.max() if self.counts.size \
++            and self.counts.max() > 0 else self.counts
++        scores[~has_profile] = prior
++        return scores
++
++    def recommend(self, state):
++        available = self.eligible(state)
++        return self.top_k(self.relevance(state), available)
+ 
+ 
+-REGISTRY = {"none": NoRecommender, "random": RandomRecommender}
++class MMRRecommender(ContentBasedRecommender):
++    """Greedy relevance minus diversity_weight times maximum slate similarity.
++
++    Unlike the relevance-weight lambda convention, zero here disables diversity.
++    The first selection always uses relevance, with catalogue-order tie breaks.
++    """
++    name = "mmr"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0,
++                 profile_weight: float = 1.0, diversity_weight: float = 0.3):
++        super().__init__(K, prior_weight, profile_weight)
++        if not np.isfinite(diversity_weight) or not 0 <= diversity_weight <= 1:
++            raise ValueError("diversity_weight must be finite and between 0 and 1")
++        self.diversity_weight = diversity_weight
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self.similarity = np.clip(self.embeddings @ self.embeddings.T, -1, 1)
++
++    def recommend(self, state):
++        available = self.eligible(state).copy()
++        relevance = self.relevance(state)
++        if self.diversity_weight == 0:
++            return self.top_k(relevance, available)
++        out = np.full((self.U, self.K), -1, dtype=int)
++        redundancy = np.zeros_like(relevance)
++        for k in range(min(self.K, self.world.N)):
++            scores = relevance if k == 0 else relevance - self.diversity_weight * redundancy
++            scores = np.where(available, scores, -np.inf)
++            users = np.flatnonzero(available.any(axis=1))
++            if not users.size:
++                break
++            items = scores[users].argmax(axis=1)
++            out[users, k] = items
++            available[users, items] = False
++            similarity = self.similarity[items]
++            redundancy[users] = similarity if k == 0 \
++                else np.maximum(redundancy[users], similarity)
++        return out
++
++
++REGISTRY = {"none": NoRecommender, "random": RandomRecommender,
++            "popularity": PopularityRecommender, "content": ContentBasedRecommender,
++            "mmr": MMRRecommender}
+diff --git a/src/sim/simulate.py b/src/sim/simulate.py
+index a07f5b8..a3460ce 100644
+--- a/src/sim/simulate.py
++++ b/src/sim/simulate.py
+@@ -18,6 +18,7 @@ Each round, for every active user:
+   7. the recommender observes the feedback
+ """
+ import numpy as np
++from time import perf_counter
+ 
+ from .params import Params
+ from .recommenders import NoRecommender, Recommender, SimState
+@@ -42,7 +43,8 @@ def fatigue_kernel(world: World, fatigue_rho: float) -> np.ndarray:
+ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                    recommender: Recommender | None = None,
+                    profiles: np.ndarray | None = None,
+-                   seen: np.ndarray | None = None) -> dict:
++                   seen: np.ndarray | None = None,
++                   recorder=None) -> dict:
+     pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
+     bel = Beliefs(world, pop, p)
+     rec = recommender or NoRecommender()
+@@ -61,9 +63,20 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+     pen = np.full((U, T), np.nan)            # fatigue penalty at that moment
+     left_at = np.full(U, T)                  # round at which the user left
+ 
++    if recorder is not None:
++        recorder.start(world, p, rec, rng, profiles, consumed,
++                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
++
+     for t in range(T):
+-        state = SimState(world, t, ~consumed, history, ratings, active.copy())
++        state = SimState(world, t, ~consumed, history, ratings, active.copy(),
++                         extra={"profiles": profiles} if profiles is not None else {})
++        if recorder is not None:
++            recorder.before_round(state, rec,
++                                  {"belief_mean": bel.mean, "belief_variance": bel.var,
++                                   "fatigue": F})
++        started = perf_counter()
+         slates = rec.recommend(state)
++        recommendation_seconds = perf_counter() - started
+ 
+         score = bel.certainty_equivalent(p.gamma)
+         if p.phi > 0 and p.fatigue_aware:
+@@ -99,6 +112,16 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                 F[users] += Kf[items]
+         if users:
+             rec.observe(state, np.array(users), np.array(items), np.array(fb))
++        if recorder is not None:
++            recorder.after_round(t, slates, np.array(users, dtype=int),
++                                 np.array(items, dtype=int), np.array(fb, dtype=float), rec,
++                                 {"choice_scores": score, "active_after": active,
++                                  "fatigue_after": F, "belief_mean_after": bel.mean,
++                                  "belief_variance_after": bel.var,
++                                  "recommendation_seconds": recommendation_seconds})
+ 
+-    return {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
+-            "X": pop.X, "V": pop.V}
++    run = {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
++           "X": pop.X, "V": pop.V}
++    if recorder is not None:
++        recorder.finish(run)
++    return run

@@ -1,0 +1,45 @@
+
+==================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_artifacts.py ___________________
+import file mismatch:
+imported module 'test_artifacts' has this __file__ attribute:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/report_validation/20261024T114856280981Z_45df7ccf/source/tests/test_artifacts.py
+which is not the same as the test file we want to collect:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/tests/test_artifacts.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_________________ ERROR collecting tests/test_recommenders.py __________________
+import file mismatch:
+imported module 'test_recommenders' has this __file__ attribute:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/report_validation/20261024T114856280981Z_45df7ccf/source/tests/test_recommenders.py
+which is not the same as the test file we want to collect:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/tests/test_recommenders.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+________________ ERROR collecting tests/test_report_pipeline.py ________________
+import file mismatch:
+imported module 'test_report_pipeline' has this __file__ attribute:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/report_validation/20261024T114856280981Z_45df7ccf/source/tests/test_report_pipeline.py
+which is not the same as the test file we want to collect:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/tests/test_report_pipeline.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+___________________ ERROR collecting tests/test_reporting.py ___________________
+import file mismatch:
+imported module 'test_reporting' has this __file__ attribute:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/report_validation/20261024T114856280981Z_45df7ccf/source/tests/test_reporting.py
+which is not the same as the test file we want to collect:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/tests/test_reporting.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+______________________ ERROR collecting tests/test_sim.py ______________________
+import file mismatch:
+imported module 'test_sim' has this __file__ attribute:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/report_validation/20261024T114856280981Z_45df7ccf/source/tests/test_sim.py
+which is not the same as the test file we want to collect:
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/tests/test_sim.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=========================== short test summary info ============================
+ERROR tests/test_artifacts.py
+ERROR tests/test_recommenders.py
+ERROR tests/test_report_pipeline.py
+ERROR tests/test_reporting.py
+ERROR tests/test_sim.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!!
+5 errors in 0.68s

@@ -1,0 +1,762 @@
+diff --git a/config.yaml b/config.yaml
+index 877d53b..ebe5f7e 100644
+--- a/config.yaml
++++ b/config.yaml
+@@ -16,6 +16,13 @@ recommenders:
+   prior_weight: 1.0      # total popularity pseudocount mass before simulated reads
+   profile_weight: 1.0    # initial visible profile counts as one normalized article
+   diversity_weight: 0.3  # MMR penalty; 0 exactly matches content-based ranking
++  bm25:
++    k1: 1.2
++    b: 0.75
++  mf:
++    factors: 8
++    regularization: 1.0
++    iterations: 3
+ 
+ # ---- Step 1: reproduce Aridor et al. on the circle --------------------------
+ aridor:
+diff --git a/docs/recommenders.md b/docs/recommenders.md
+index 1534237..076acc4 100644
+--- a/docs/recommenders.md
++++ b/docs/recommenders.md
+@@ -17,11 +17,13 @@ ranking algorithms.
+ | `popularity` | Simulated read counts plus an optional initial prior | Every observed read adds one count |
+ | `content` | Cosine similarity to a visible profile and simulated reading history | Rebuilds the profile from the current history |
+ | `mmr` | Greedy content relevance minus a slate redundancy penalty | Uses the same history and popularity updates as `content` |
++| `bm25` | Keyword relevance to visible query text and simulated reading history | Reuses static article text; updates popularity fallback |
++| `mf` | Predicted observed utility from user/item factors and biases | Refits on accumulated observed feedback after each round |
+ 
+-Matrix factorisation is deferred until the minimum three systems work on real data.
+-These algorithms do not receive simulated true utilities or Bayesian beliefs.
+-The `ratings` field contains observed feedback only. These three algorithms count
+-reads, but do not weight content profiles by feedback values.
++These algorithms do not receive unobserved utilities or Bayesian beliefs.
++The `ratings` field contains observed feedback only. Popularity, content and MMR
++count reads without weighting content profiles by feedback. Matrix factorisation
++fits the observed utility values, including negative and zero values.
+ 
+ ## Array contract
+ 
+@@ -38,6 +40,8 @@ External article IDs map through `world.ids[n]`; slates contain indices, not IDs
+ | `state.ratings` | float `[U, N]` | Observed utility; `NaN` for unobserved pairs |
+ | `state.active` | bool `[U]` | Whether each reader remains active |
+ | `state.extra['profiles']` | finite float `[U, D]`, optional | Visible initial profiles, in the article embedding space |
++| `world.article_metadata` | `N` records with `news_id`, `title`, optional `abstract` | Required BM25 article text; aligned through catalogue IDs |
++| `state.extra['query_texts']` | optional list of `U` strings | Observable initial keyword context for BM25 |
+ | `state.t` | integer | Current round |
+ | Returned slate | integer `[U, K]` | Distinct eligible article indices; `-1` pads empty positions |
+ 
+@@ -53,7 +57,10 @@ Missing article embeddings raise `ValueError` for content and MMR; there is no
+ silent substitution of the simulator's latent correlation matrix.
+ 
+ The simulator now forwards its optional `profiles` argument into `extra`.
+-Existing calls without profiles continue to work.
++It also forwards optional `query_texts`. The news-user adapter builds these texts
++from each sampled user's visible MIND history titles and abstracts. It does not
++turn embedding coordinates or hidden preferences into keywords.
++Existing calls without either input continue to work.
+ 
+ ## Lifecycle
+ 
+@@ -131,7 +138,7 @@ project findings.
+ Once Person A supplies `src/data/store.py` and processed MIND data:
+ 
+ ```bash
+-python scripts/run_news.py --recommenders none random popularity content mmr --n-pop 20
++python scripts/run_news.py --recommenders none random popularity content mmr bm25 mf --n-pop 20
+ python scripts/run_news.py --recommenders mmr --mmr-diversity-weight 0 --out results/mmr_0
+ python scripts/run_news.py --recommenders mmr --mmr-diversity-weight 0.6 --out results/mmr_06
+ ```
+@@ -144,3 +151,71 @@ the config, seeds, command, models, traces, metrics, figures and source snapshot
+ Person A must confirm observable profiles, history policy, feedback units, and
+ article ordering. Current simulated feedback is utility after fatigue. Real-data
+ experiments also need the missing data-loading module and processed MIND files.
++
++## Additional comparisons: BM25 and matrix factorisation
++
++BM25 provides a lexical comparison to embedding-based content ranking. It scores
++title-plus-abstract text using term frequency saturation and document length
++normalization. It uses the Lucene positive-IDF convention:
++
++```text
++IDF(term) = log(1 + (N - document_frequency + 0.5) / (document_frequency + 0.5))
++score(document, query) = sum over unique query terms of:
++    IDF(term) * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / mean_length))
++```
++
++Query terms come from optional visible initial query text and articles consumed
++during simulation. Empty or out-of-vocabulary queries use learned popularity.
++Missing or entirely empty article text raises an error. BM25 does not fabricate
++text from categories, IDs, embeddings, or hidden user values. Tokenization is
++deterministic lowercase alphanumeric matching; this is not a linguistic stemmer.
++
++Defaults are `k1=1.2` and `b=0.75`. These are configurable, not tuned MIND results.
++The formula follows [Elastic's BM25 explanation](https://www.elastic.co/blog/practical-bm25-part-2-the-bm25-algorithm-and-its-variables).
++
++Matrix factorisation uses an explicit-feedback model:
++
++```text
++predicted_utility(user, article) = global_mean + user_bias + article_bias
++                                 + user_factors dot article_factors
++```
++
++Regularized alternating least squares fits only observed user–article utilities.
++After each feedback batch it warm-starts from the previous factors and refits all
++observed pairs. Missing feedback is not replaced with zero. Repeated observations
++of a pair replace that pair's training target with the latest feedback, while
++popularity still counts every observed read event.
++
++Cold users use popularity. Items with no observations use a baseline rather than
++random latent-factor predictions. The implementation follows the regularized
++explicit-rating framework in [Koren, Bell and Volinsky (2009)](https://doi.org/10.1109/MC.2009.263).
++Our target is the simulator's observed utility, not a calibrated click probability.
++
++These defaults use eight factors, regularization one, and three ALS iterations
++per feedback batch. Per-algorithm overrides are supported in `config.yaml`:
++
++```yaml
++recommenders:
++  K: 10
++  prior_weight: 1.0
++  bm25:
++    k1: 1.2
++    b: 0.75
++  mf:
++    factors: 8
++    regularization: 1.0
++    iterations: 3
++```
++
++All constructor settings enter population metadata and report condition grouping.
++MF factor arrays, biases, observed feedback, and popularity counts enter safe
++checkpoints. BM25 rebuilds its index from archived article text and validates
++the text fingerprint when loading a saved model.
++
++## Why FAISS is deferred
++
++[FAISS](https://faiss.ai/) provides vector-search indexes and related operations.
++An exact inner-product index over normalized embeddings implements the same
++ranking rule as the existing cosine scorer. Approximate indexes can change the
++retrieved candidates. We have not added either backend as a separate behavioral
++condition. A larger-catalogue performance benchmark should motivate that change.
+diff --git a/docs/report_artifacts.md b/docs/report_artifacts.md
+index ad6918f..454cc67 100644
+--- a/docs/report_artifacts.md
++++ b/docs/report_artifacts.md
+@@ -8,6 +8,8 @@ The current algorithms are classical NumPy recommenders. Their saved models
+ contain settings, learned popularity counts, catalogue fingerprints, and exact
+ random-generator states. Content embeddings are saved once in each population's
+ world archive. MMR similarity is rebuilt from those saved embeddings on reload.
++MF checkpoints also preserve learned factors, biases, and the observed-feedback
++matrix. BM25 checkpoints validate the archived article text and rebuild its index.
+ There are no LLM calls or LLM responses in this implementation.
+ 
+ ## What each run saves
+@@ -111,7 +113,7 @@ python scripts/run_report.py --out results/report_checks
+ ```
+ 
+ The default check uses 12 readers, 60 generated articles, eight rounds, three
+-populations, two fatigue levels, and three MMR weights. It compares seven
++populations, two fatigue levels, and three MMR weights. It compares nine
+ algorithm/settings combinations. These are synthetic engineering checks,
+ not MIND findings for the project report. Figures identify synthetic inputs.
+ 
+@@ -126,7 +128,7 @@ The real-data command cannot complete until they are supplied.
+ 
+ ```bash
+ python scripts/run_news.py \
+-  --recommenders none random popularity content mmr \
++  --recommenders none random popularity content bm25 mf mmr \
+   --mmr-diversity-weights 0 0.3 0.6 \
+   --n-pop 20 --workers 2 --out results/news
+ ```
+diff --git a/scripts/check_recommenders.py b/scripts/check_recommenders.py
+index c671bfc..3a6d6a1 100644
+--- a/scripts/check_recommenders.py
++++ b/scripts/check_recommenders.py
+@@ -30,6 +30,9 @@ def synthetic_inputs(users, articles, dimensions, seed):
+                   ids=np.arange(articles), profile_vecs=embeddings,
+                   popularity=rng.random(articles),
+                   cats=np.arange(articles) % 10, kind="news")
++    world.article_metadata = [{"news_id": int(i), "title": f"topic{i % 10} news update {i}",
++                               "abstract": f"Synthetic topic{i % 10} report"}
++                              for i in range(articles)]
+     return world, profiles
+ 
+ 
+@@ -110,7 +113,7 @@ def main():
+     parser.add_argument("--k", type=int, default=10)
+     parser.add_argument("--seed", type=int, default=42)
+     parser.add_argument("--recommenders", nargs="+", choices=list(REGISTRY),
+-                        default=["none", "random", "popularity", "content", "mmr"])
++                        default=list(REGISTRY))
+     parser.add_argument("--simulator", action="store_true",
+                         help="Also time complete synthetic simulator runs")
+     parser.add_argument("--out", type=Path, default=None, help="Optional JSON report path")
+diff --git a/scripts/run_news.py b/scripts/run_news.py
+index 19fa1ab..12c74aa 100644
+--- a/scripts/run_news.py
++++ b/scripts/run_news.py
+@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ from src.sim.experiment import run_grid, summarise
+ from src.sim.news_users import attach_user_pool, sample_news_users
+ from src.sim.recommenders import REGISTRY
++from src.sim.recommender_config import recommender_options
+ from src.sim.run_bundle import RunBundle
+ from src.sim.world import describe, news_world
+ 
+@@ -99,15 +100,11 @@ def execute_news(args, full, out):
+         settings = full.get("recommenders", {})
+         recs = {}
+         for r in args.recommenders:
+-            options = {"K": settings.get("K", 10)}
+-            if r in ("popularity", "content", "mmr"):
+-                options["prior_weight"] = settings.get("prior_weight", 1.0)
+-            if r in ("content", "mmr"):
+-                options["profile_weight"] = settings.get("profile_weight", 1.0)
++            options = recommender_options(r, settings)
+             if r == "mmr":
+                 options["diversity_weight"] = args.mmr_diversity_weight \
+                     if args.mmr_diversity_weight is not None \
+-                    else settings.get("diversity_weight", 0.3)
++                    else options.get("diversity_weight", 0.3)
+                 if args.mmr_diversity_weights is not None:
+                     for weight in args.mmr_diversity_weights:
+                         recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
+diff --git a/scripts/run_report.py b/scripts/run_report.py
+index d6d69e9..a59ef7d 100644
+--- a/scripts/run_report.py
++++ b/scripts/run_report.py
+@@ -34,8 +34,13 @@ def synthetic_world(rho, N=60, dimensions=16, seed=42, pool_size=100):
+     profiles /= np.linalg.norm(profiles, axis=1, keepdims=True)
+     world.user_pool = {"ids": np.array([f"synthetic_reader_{i}" for i in range(pool_size)]),
+                        "profiles": profiles, "seen": np.zeros((pool_size, N), dtype=bool)}
++    topics = ("sports", "politics", "technology", "business", "health", "science")
+     world.article_metadata = [{"news_id": str(world.ids[i]), "category": int(world.cats[i]),
+-                               "title": f"Synthetic article {i}"} for i in range(N)]
++                               "title": f"{topics[world.cats[i]]} news update {i}",
++                               "abstract": f"Synthetic report about {topics[world.cats[i]]}"}
++                              for i in range(N)]
++    world.user_pool["query_texts"] = [topics[int(np.argmax(p[:min(6, dimensions)]))]
++                                      for p in profiles]
+     return world
+ 
+ 
+@@ -54,6 +59,8 @@ def main():
+     ap.add_argument("--rho", type=float, nargs="+", default=[0.5])
+     ap.add_argument("--fatigue", type=float, nargs="+", default=[0., 0.5])
+     ap.add_argument("--mmr-weights", type=float, nargs="+", default=[0., 0.3, 0.6])
++    ap.add_argument("--recommenders", nargs="+", choices=list(REGISTRY),
++                    default=["none", "random", "popularity", "content", "bm25", "mf", "mmr"])
+     args = ap.parse_args()
+     if args.rebuild is not None:
+         from src.sim.reporting import rebuild_report
+@@ -74,9 +81,10 @@ def main():
+     config = {"data_kind": "synthetic", "settings": vars(args).copy(),
+               "grid": {"rho": args.rho, "phi": args.fatigue, "info": ["none"]}}
+     recs = {name: partial(REGISTRY[name], K=args.k)
+-            for name in ("none", "random", "popularity", "content")}
+-    for weight in args.mmr_weights:
+-        recs[f"mmr_{weight:g}"] = partial(REGISTRY["mmr"], K=args.k, diversity_weight=weight)
++            for name in args.recommenders if name != "mmr"}
++    if "mmr" in args.recommenders:
++        for weight in args.mmr_weights:
++            recs[f"mmr_{weight:g}"] = partial(REGISTRY["mmr"], K=args.k, diversity_weight=weight)
+     with RunBundle(args.out, config, vars(args), "synthetic") as bundle:
+         print("SYNTHETIC ENGINEERING CHECK: not MIND research findings")
+         print("Saving complete run to:", bundle.path)
+diff --git a/src/sim/artifacts.py b/src/sim/artifacts.py
+index 8ea635c..8238fb6 100644
+--- a/src/sim/artifacts.py
++++ b/src/sim/artifacts.py
+@@ -104,7 +104,8 @@ def save_world(world, path):
+     fields = {name: getattr(world, name) for name in WORLD_FIELDS}
+     fields["L"] = world.L
+     _write_npz(path, fields, {"absent": [k for k, v in fields.items() if v is None],
+-                              "digest": world_digest(world)})
++                              "digest": world_digest(world),
++                              "article_metadata": getattr(world, "article_metadata", None)})
+ 
+ 
+ def load_world(path):
+@@ -123,14 +124,15 @@ def load_world(path):
+     article_path = path.parent / "article_metadata.json"
+     if article_path.exists():
+         world.article_metadata = json.loads(article_path.read_text(encoding="utf-8"))
++    elif metadata.get("article_metadata") is not None:
++        world.article_metadata = metadata["article_metadata"]
+     return world
+ 
+ 
+ def _model_settings(rec):
+     if rec.name not in REGISTRY or type(rec) is not REGISTRY[rec.name]:
+         raise ValueError("Checkpointing supports only registered recommender classes")
+-    keys = ("K", "prior_weight", "profile_weight", "diversity_weight")
+-    return {key: getattr(rec, key) for key in keys if hasattr(rec, key)}
++    return rec.get_config()
+ 
+ 
+ def save_checkpoint(rec, path):
+@@ -141,7 +143,10 @@ def save_checkpoint(rec, path):
+     metadata = {"algorithm": rec.name, "settings": _model_settings(rec),
+                 "U": rec.U, "world_digest": world_digest(rec.world),
+                 "rng": rec.rng.bit_generator.state}
+-    values = {"counts": rec.counts} if hasattr(rec, "counts") else {}
++    if rec.name == "bm25":
++        metadata["article_text_digest"] = hashlib.sha256(
++            _json_text(rec.world.article_metadata).encode()).hexdigest()
++    values = rec.model_state()
+     _write_npz(path, values, metadata)
+ 
+ 
+@@ -150,6 +155,10 @@ def load_checkpoint(path, world):
+     values, metadata = _read_npz(path)
+     if metadata["world_digest"] != world_digest(world):
+         raise ValueError("Checkpoint world does not match the supplied catalogue")
++    if "article_text_digest" in metadata:
++        text_digest = hashlib.sha256(_json_text(getattr(world, "article_metadata", None)).encode()).hexdigest()
++        if text_digest != metadata["article_text_digest"]:
++            raise ValueError("Checkpoint article text does not match the supplied catalogue")
+     algorithm = metadata["algorithm"]
+     if algorithm not in REGISTRY:
+         raise ValueError("Unknown checkpoint recommender")
+@@ -160,11 +169,7 @@ def load_checkpoint(path, world):
+     rng = np.random.Generator(BIT_GENERATORS[generator]())
+     rec = REGISTRY[algorithm](**metadata["settings"])
+     rec.reset(world, metadata["U"], rng)
+-    if "counts" in values:
+-        counts = values["counts"]
+-        if counts.shape != (world.N,) or not np.isfinite(counts).all() or (counts < 0).any():
+-            raise ValueError("Invalid learned counts in checkpoint")
+-        rec.counts = counts
++    rec.restore_model_state(values)
+     # reset currently draws no values; setting after reset also supports future resets.
+     rng.bit_generator.state = state
+     return rec
+diff --git a/src/sim/experiment.py b/src/sim/experiment.py
+index 5857256..f148818 100644
+--- a/src/sim/experiment.py
++++ b/src/sim/experiment.py
+@@ -42,9 +42,7 @@ def _one(job):
+     archive = None
+     if archive_dir is not None:
+         from .artifacts import PopulationArchive
+-        settings = {k: getattr(rec, k) for k in
+-                    ("K", "prior_weight", "profile_weight", "diversity_weight")
+-                    if hasattr(rec, k)}
++        settings = rec.get_config()
+         archive = PopulationArchive(Path(archive_dir) / "populations" / f"job_{job_id:06d}",
+                                     metadata={"job_id": job_id, "population": pop_id,
+                                               "pop": pop_id, "seed": seed, "rho": rho,
+@@ -55,7 +53,8 @@ def _one(job):
+                                               "initial_histories": getattr(world, "sampled_histories", None),
+                                               "recommender_settings": settings})
+     try:
+-        run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive)
++        run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive,
++                             query_texts=getattr(world, "sampled_query_texts", None))
+     except Exception as error:
+         if archive is not None:
+             archive.fail(error)
+diff --git a/src/sim/news_users.py b/src/sim/news_users.py
+index 9b54b8d..b9a5adf 100644
+--- a/src/sim/news_users.py
++++ b/src/sim/news_users.py
+@@ -20,15 +20,23 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0):
+     profiles = np.zeros((len(uids), store.embeddings.shape[1]), np.float32)
+     seen = np.zeros((len(uids), world.N), bool)
+     histories = []
++    query_texts = []
++    article_records = store.articles.set_index("news_id").to_dict("index")
+     for k, u in enumerate(uids):
+         hist = store.history(u)
+         histories.append(list(hist))
++        text = []
++        for news_id in hist:
++            article = article_records.get(news_id, {})
++            text.extend(article[key] for key in ("title", "abstract")
++                        if isinstance(article.get(key), str))
++        query_texts.append(" ".join(text))
+         profiles[k] = store.embeddings[[store.index[n] for n in hist]].mean(0)
+         for n in hist:
+             if n in pos:
+                 seen[k, pos[n]] = True
+     world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen,
+-                       "histories": histories}
++                       "histories": histories, "query_texts": query_texts}
+     return world
+ 
+ 
+@@ -39,4 +47,6 @@ def sample_news_users(world, rng, U: int):
+     world.sampled_user_ids = pool["ids"][idx].tolist()
+     world.sampled_histories = [pool["histories"][i] for i in idx] \
+         if "histories" in pool else None
++    world.sampled_query_texts = [pool["query_texts"][i] for i in idx] \
++        if "query_texts" in pool else None
+     return pool["profiles"][idx], pool["seen"][idx]
+diff --git a/src/sim/recommenders.py b/src/sim/recommenders.py
+index d38e2b7..128e0bc 100644
+--- a/src/sim/recommenders.py
++++ b/src/sim/recommenders.py
+@@ -11,6 +11,10 @@ To add a recommender, subclass Recommender and implement `recommend`
+ allowed to see is in SimState: it never sees users' true values.
+ """
+ from dataclasses import dataclass, field
++from collections import Counter
++import inspect
++from numbers import Real
++import re
+ 
+ import numpy as np
+ 
+@@ -51,6 +55,19 @@ class Recommender:
+         (realised utility). Learning recommenders update themselves here."""
+         pass
+ 
++    def get_config(self) -> dict:
++        """Return the explicit constructor settings of a registered algorithm."""
++        return {name: getattr(self, name) for name in
++                inspect.signature(type(self).__init__).parameters if name != "self"}
++
++    def model_state(self) -> dict:
++        """Return learned arrays; static catalogue data stays in the world."""
++        return {}
++
++    def restore_model_state(self, values: dict):
++        if values:
++            raise ValueError("This recommender has no learned model arrays")
++
+     # helper for subclasses: top-K available items from a score matrix
+     def top_k(self, scores: np.ndarray, available: np.ndarray) -> np.ndarray:
+         s = np.where(available & np.isfinite(scores), scores, -np.inf)
+@@ -121,6 +138,17 @@ class PopularityRecommender(Recommender):
+     def observe(self, state, users, items, feedback):
+         np.add.at(self.counts, items, 1.0)
+ 
++    def model_state(self):
++        return {"counts": self.counts.copy()}
++
++    def restore_model_state(self, values):
++        if set(values) != {"counts"}:
++            raise ValueError("Popularity state requires only counts")
++        counts = np.asarray(values["counts"], dtype=float)
++        if counts.shape != (self.world.N,) or not np.isfinite(counts).all() or (counts < 0).any():
++            raise ValueError("Invalid learned counts in model state")
++        self.counts = counts.copy()
++
+ 
+ def _unit_rows(vectors):
+     """Normalize finite vectors; retain zero rows as zero vectors."""
+@@ -230,6 +258,243 @@ class MMRRecommender(ContentBasedRecommender):
+         return out
+ 
+ 
++class BM25Recommender(PopularityRecommender):
++    """Lexical article matching from visible text and simulated reading history.
++
++    The query is the set of unique lowercase alphanumeric tokens in optional
++    `extra['query_texts'][u]` and titles/abstracts of simulated reads. BM25 uses
++    positive Lucene-style IDF. Empty or out-of-vocabulary queries use popularity.
++    No stemming, stopword removal, category expansion, or hidden preferences are
++    used. Catalogue text is matched by news_id, not metadata row order.
++    """
++    name = "bm25"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0,
++                 k1: float = 1.2, b: float = 0.75):
++        super().__init__(K, prior_weight)
++        for name, value in (("k1", k1), ("b", b)):
++            if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real) \
++                    or not np.isfinite(value):
++                raise ValueError(f"{name} must be a finite number")
++        if k1 <= 0 or not 0 <= b <= 1:
++            raise ValueError("k1 must be positive and b must be in [0, 1]")
++        self.k1, self.b = k1, b
++
++    @staticmethod
++    def tokenize(text):
++        return re.findall(r"[^\W_]+", text.lower(), flags=re.UNICODE)
++
++    @staticmethod
++    def _text(value):
++        if value is None or isinstance(value, (float, np.floating)) and np.isnan(value):
++            return ""
++        if not isinstance(value, str):
++            raise ValueError("Article title and abstract must be strings or missing")
++        return value
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        metadata = getattr(world, "article_metadata", None)
++        if world.N == 0 and metadata is None:
++            metadata = []
++        if not isinstance(metadata, (list, tuple)):
++            raise ValueError("BM25 requires article_metadata with news_id, title and/or abstract")
++        ids = [] if world.N == 0 and world.ids is None else np.asarray(world.ids)
++        if np.shape(ids) != (world.N,):
++            raise ValueError("BM25 requires world.ids with shape [N]")
++        ids = [str(value) for value in ids]
++        if len(ids) != len(set(ids)):
++            raise ValueError("BM25 catalogue article IDs must be unique")
++        by_id = {}
++        for record in metadata:
++            if not isinstance(record, dict) or "news_id" not in record:
++                raise ValueError("Each BM25 article record must contain news_id")
++            key = str(record["news_id"])
++            if key in by_id:
++                raise ValueError("BM25 article_metadata contains duplicate news_id values")
++            by_id[key] = record
++        if any(key not in by_id for key in ids):
++            raise ValueError("BM25 article_metadata is missing catalogue article IDs")
++        self.document_tokens = []
++        for key in ids:
++            record = by_id[key]
++            text = self._text(record.get("title")) + " " + self._text(record.get("abstract"))
++            self.document_tokens.append(tuple(self.tokenize(text)))
++        lengths = np.asarray([len(tokens) for tokens in self.document_tokens], dtype=float)
++        if world.N and not lengths.any():
++            raise ValueError("BM25 requires at least one nonempty article title or abstract")
++        self.average_length = float(lengths.mean()) if world.N else 0.0
++        frequencies = [Counter(tokens) for tokens in self.document_tokens]
++        df = Counter(term for terms in frequencies for term in terms)
++        postings = {}
++        for item, terms in enumerate(frequencies):
++            norm = self.k1 * (1 - self.b + self.b * lengths[item] / self.average_length)
++            for term, tf in terms.items():
++                idf = np.log1p((world.N - df[term] + .5) / (df[term] + .5))
++                postings.setdefault(term, []).append((item, idf * tf * (self.k1 + 1) / (tf + norm)))
++        self.postings = {term: (np.array([item for item, _ in values], dtype=int),
++                                np.array([weight for _, weight in values]))
++                         for term, values in postings.items()}
++
++    def relevance(self, state):
++        if len(state.history) != self.U:
++            raise ValueError("history must contain one list per user")
++        query_texts = state.extra.get("query_texts")
++        if query_texts is None:
++            query_texts = [""] * self.U
++        if not isinstance(query_texts, (list, tuple, np.ndarray)) \
++                or np.ndim(query_texts) != 1 or len(query_texts) != self.U \
++                or any(not isinstance(text, str) for text in query_texts):
++            raise ValueError("extra['query_texts'] must contain one string per user")
++        scores = np.zeros((self.U, self.world.N))
++        fallback = self.counts / self.counts.max() if self.counts.size \
++            and self.counts.max() > 0 else self.counts
++        for u, history in enumerate(state.history):
++            query = set(self.tokenize(query_texts[u]))
++            if len(history):
++                idx = np.asarray(history)
++                if idx.ndim != 1 or not np.issubdtype(idx.dtype, np.integer) \
++                        or (idx < 0).any() or (idx >= self.world.N).any():
++                    raise ValueError("history must contain catalogue indices in [0, N)")
++                for item in idx:
++                    query.update(self.document_tokens[item])
++            matched = False
++            # Sorted query terms also make floating-point accumulation repeatable.
++            for term in sorted(query):
++                if term in self.postings:
++                    items, weights = self.postings[term]
++                    scores[u, items] += weights
++                    matched = True
++            if not matched:
++                scores[u] = fallback
++        return scores
++
++    def recommend(self, state):
++        available = self.eligible(state)
++        return self.top_k(self.relevance(state), available)
++
++
++class MatrixFactorizationRecommender(PopularityRecommender):
++    """Biased explicit-feedback matrix factorization with regularized ALS.
++
++    Every observed utility, including zero and negative values, is a target.
++    Missing entries are never targets. Each feedback batch warm-starts an ALS
++    refit over all stored observations. Repeated pairs retain their latest target,
++    while popularity counts every read event. Cold users use popularity; items
++    without feedback use the fitted global/user baseline instead of latent noise.
++    """
++    name = "mf"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
++                 regularization: float = 1.0, iterations: int = 3):
++        super().__init__(K, prior_weight)
++        for name, value in (("factors", factors), ("iterations", iterations)):
++            if isinstance(value, (bool, np.bool_)) \
++                    or not isinstance(value, (int, np.integer)) or value < 1:
++                raise ValueError(f"{name} must be a positive integer")
++        if isinstance(regularization, (bool, np.bool_)) \
++                or not isinstance(regularization, Real) \
++                or not np.isfinite(regularization) or regularization <= 0:
++            raise ValueError("regularization must be finite and positive")
++        self.factors, self.regularization, self.iterations = factors, regularization, iterations
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self.observed_ratings = np.full((U, world.N), np.nan)
++        self.user_factors = rng.normal(0, .1, (U, self.factors))
++        self.item_factors = rng.normal(0, .1, (world.N, self.factors))
++        self.user_bias = np.zeros(U)
++        self.item_bias = np.zeros(world.N)
++        self.global_mean = 0.0
++
++    def predictions(self):
++        return self.global_mean + self.user_bias[:, None] + self.item_bias[None, :] \
++            + self.user_factors @ self.item_factors.T
++
++    def recommend(self, state):
++        available = self.eligible(state)
++        observed = np.isfinite(self.observed_ratings)
++        scores = self.predictions()
++        unknown_items = ~observed.any(axis=0)
++        scores[:, unknown_items] = self.global_mean + self.user_bias[:, None]
++        scores[~observed.any(axis=1)] = self.counts
++        return self.top_k(scores, available)
++
++    def observe(self, state, users, items, feedback):
++        users, items = np.asarray(users), np.asarray(items)
++        try:
++            feedback = np.asarray(feedback, dtype=float)
++        except (TypeError, ValueError) as error:
++            raise ValueError("feedback must contain finite numeric utilities") from error
++        if users.ndim != 1 or items.ndim != 1 or feedback.ndim != 1 \
++                or users.shape != items.shape or users.shape != feedback.shape:
++            raise ValueError("users, items and feedback must be aligned one-dimensional arrays")
++        if not np.isfinite(feedback).all():
++            raise ValueError("feedback must contain finite numeric utilities")
++        if not users.size:
++            return
++        if not np.issubdtype(users.dtype, np.integer) \
++                or not np.issubdtype(items.dtype, np.integer) \
++                or (users < 0).any() or (users >= self.U).any() \
++                or (items < 0).any() or (items >= self.world.N).any():
++            raise ValueError("feedback users/items must be valid integer indices")
++        # All input validation precedes changes to either observations or counts.
++        for user, item, rating in zip(users, items, feedback):
++            self.observed_ratings[user, item] = rating
++        np.add.at(self.counts, items, 1.0)
++        self._fit()
++
++    def _fit(self):
++        observed = np.isfinite(self.observed_ratings)
++        values = self.observed_ratings[observed]
++        self.global_mean = float(values.mean())
++        known_items = observed.any(axis=0)
++        # Uniform early feedback can drive every fitted factor to zero. A seeded
++        # restart avoids trapping all later ALS updates at that stationary point.
++        if not np.any(self.item_factors[known_items]):
++            self.item_factors[known_items] = self.rng.normal(0, .1, (known_items.sum(), self.factors))
++        ridge = self.regularization * np.eye(self.factors + 1)
++        for _ in range(self.iterations):
++            for user in np.flatnonzero(observed.any(axis=1)):
++                idx = np.flatnonzero(observed[user])
++                design = np.column_stack((np.ones(len(idx)), self.item_factors[idx]))
++                target = self.observed_ratings[user, idx] - self.global_mean - self.item_bias[idx]
++                fitted = np.linalg.solve(design.T @ design + ridge, design.T @ target)
++                self.user_bias[user], self.user_factors[user] = fitted[0], fitted[1:]
++            for item in np.flatnonzero(known_items):
++                idx = np.flatnonzero(observed[:, item])
++                design = np.column_stack((np.ones(len(idx)), self.user_factors[idx]))
++                target = self.observed_ratings[idx, item] - self.global_mean - self.user_bias[idx]
++                fitted = np.linalg.solve(design.T @ design + ridge, design.T @ target)
++                self.item_bias[item], self.item_factors[item] = fitted[0], fitted[1:]
++
++    def model_state(self):
++        values = super().model_state()
++        values.update({name: np.array(getattr(self, name), copy=True) for name in
++                       ("observed_ratings", "user_factors", "item_factors",
++                        "user_bias", "item_bias", "global_mean")})
++        return values
++
++    def restore_model_state(self, values):
++        shapes = {"counts": (self.world.N,), "observed_ratings": (self.U, self.world.N),
++                  "user_factors": (self.U, self.factors),
++                  "item_factors": (self.world.N, self.factors),
++                  "user_bias": (self.U,), "item_bias": (self.world.N,), "global_mean": ()}
++        if set(values) != set(shapes):
++            raise ValueError("MF state must contain every learned model array")
++        restored = {}
++        for name, shape in shapes.items():
++            array = np.asarray(values[name], dtype=float)
++            finite = not np.isinf(array).any() if name == "observed_ratings" \
++                else np.isfinite(array).all()
++            if array.shape != shape or not finite or name == "counts" and (array < 0).any():
++                raise ValueError(f"Invalid {name} in MF model state")
++            restored[name] = array.copy()
++        for name, array in restored.items():
++            setattr(self, name, float(array) if name == "global_mean" else array)
++
++
+ REGISTRY = {"none": NoRecommender, "random": RandomRecommender,
+             "popularity": PopularityRecommender, "content": ContentBasedRecommender,
+-            "mmr": MMRRecommender}
++            "mmr": MMRRecommender, "bm25": BM25Recommender,
++            "mf": MatrixFactorizationRecommender}
+diff --git a/src/sim/simulate.py b/src/sim/simulate.py
+index a3460ce..8b6dc7e 100644
+--- a/src/sim/simulate.py
++++ b/src/sim/simulate.py
+@@ -44,7 +44,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                    recommender: Recommender | None = None,
+                    profiles: np.ndarray | None = None,
+                    seen: np.ndarray | None = None,
+-                   recorder=None) -> dict:
++                   recorder=None, query_texts=None) -> dict:
+     pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
+     bel = Beliefs(world, pop, p)
+     rec = recommender or NoRecommender()
+@@ -68,8 +68,11 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                        {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
+ 
+     for t in range(T):
++        extra = {"profiles": profiles} if profiles is not None else {}
++        if query_texts is not None:
++            extra["query_texts"] = query_texts
+         state = SimState(world, t, ~consumed, history, ratings, active.copy(),
+-                         extra={"profiles": profiles} if profiles is not None else {})
++                         extra=extra)
+         if recorder is not None:
+             recorder.before_round(state, rec,
+                                   {"belief_mean": bel.mean, "belief_variance": bel.var,
+diff --git a/tests/test_artifacts.py b/tests/test_artifacts.py
+index 663efe9..ec2f218 100644
+--- a/tests/test_artifacts.py
++++ b/tests/test_artifacts.py
+@@ -15,11 +15,15 @@ from src.sim.world import World
+ 
+ 
+ def world_fixture():
+-    return World(N=4, D=np.ones((4, 4)) - np.eye(4), C=np.eye(4), rho=0.,
++    world = World(N=4, D=np.ones((4, 4)) - np.eye(4), C=np.eye(4), rho=0.,
+                  ids=np.array(["n0", "n1", "n2", "n3"], dtype=object),
+                  cats=np.array(["a", "a", "b", "b"], dtype=object),
+                  profile_vecs=np.array([[1., 0.], [.8, .6], [0., 1.], [-1., 0.]]),
+                  popularity=np.array([4., 3., 2., 1.]), kind="news")
++    world.article_metadata = [{"news_id": f"n{i}", "title": title}
++                              for i, title in enumerate(("sports cricket", "sports football",
++                                                         "politics election", "health medicine"))]
++    return world
+ 
+ 
+ def state_fixture(world):
+diff --git a/tests/test_report_pipeline.py b/tests/test_report_pipeline.py
+index e7c7ee3..800de55 100644
+--- a/tests/test_report_pipeline.py
++++ b/tests/test_report_pipeline.py
+@@ -191,7 +191,7 @@ def test_news_runner_archives_real_input_contract_with_stub_store(tmp_path, monk
+                         "only_clicked": True, "seed": 5, "base": {},
+                         "grid": {"rho": [.5], "phi": [0.], "info": ["none"]}},
+               "recommenders": {"K": 2}}
+-    args = Namespace(config="unused-fixture", recommenders=["none", "popularity", "content", "mmr"],
++    args = Namespace(config="unused-fixture", recommenders=["none", "popularity", "content", "mmr", "bm25", "mf"],
+                      mmr_diversity_weight=None, mmr_diversity_weights=[0., .3],
+                      workers=1, n_pop=2)
+     execute_news(args, config, tmp_path)
+@@ -202,5 +202,5 @@ def test_news_runner_archives_real_input_contract_with_stub_store(tmp_path, monk
+     articles = json.loads((tmp_path / "populations" / "job_000000" / "article_metadata.json").read_text())
+     assert len(articles) == 6 and articles[0]["title"].startswith("fixture")
+     summary = pd.read_csv(tmp_path / "report" / "summary.csv")
+-    assert set(summary["recommender"]) == {"none", "popularity", "content", "mmr_0", "mmr_0.3"}
++    assert set(summary["recommender"]) == {"none", "popularity", "content", "mmr_0", "mmr_0.3", "bm25", "mf"}
+     assert (summary["n_populations"] == 2).all()

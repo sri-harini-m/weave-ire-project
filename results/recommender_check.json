@@ -1,0 +1,69 @@
+{
+  "data": "synthetic; not MIND or research comparison results",
+  "environment": {
+    "python": "3.12.13",
+    "numpy": "2.5.4",
+    "platform": "macOS-26.7.1-arm64-arm-64bit"
+  },
+  "settings": {
+    "users": 100,
+    "articles": 500,
+    "rounds": 20,
+    "dimensions": 384,
+    "k": 10,
+    "seed": 42
+  },
+  "setup_seconds": 0.016109916992718354,
+  "results": [
+    {
+      "recommender": "none",
+      "reset_seconds": 3.5250006476417184e-05,
+      "recommendation_seconds": 2.246932126581669e-06,
+      "feedback_seconds": 1.790962414816022e-06,
+      "recommender_total_seconds": 3.9287901017814875e-05,
+      "contract_passed": true,
+      "simulator_seconds": 0.117248374997871,
+      "simulator_passed": true
+    },
+    {
+      "recommender": "random",
+      "reset_seconds": 2.691699774004519e-05,
+      "recommendation_seconds": 0.03212366902153008,
+      "feedback_seconds": 3.3320393413305283e-06,
+      "recommender_total_seconds": 0.03215391805861145,
+      "contract_passed": true,
+      "simulator_seconds": 0.14914795799995773,
+      "simulator_passed": true
+    },
+    {
+      "recommender": "popularity",
+      "reset_seconds": 5.937498644925654e-05,
+      "recommendation_seconds": 0.011030626978026703,
+      "feedback_seconds": 3.358503454364836e-05,
+      "recommender_total_seconds": 0.011123586999019608,
+      "contract_passed": true,
+      "simulator_seconds": 0.127121083001839,
+      "simulator_passed": true
+    },
+    {
+      "recommender": "content",
+      "reset_seconds": 0.00031770800705999136,
+      "recommendation_seconds": 0.04595929401693866,
+      "feedback_seconds": 3.187399124726653e-05,
+      "recommender_total_seconds": 0.046308876015245914,
+      "contract_passed": true,
+      "simulator_seconds": 0.1637285000178963,
+      "simulator_passed": true
+    },
+    {
+      "recommender": "mmr",
+      "reset_seconds": 0.0006089170055929571,
+      "recommendation_seconds": 0.03795666608493775,
+      "feedback_seconds": 3.108390956185758e-05,
+      "recommender_total_seconds": 0.038596667000092566,
+      "contract_passed": true,
+      "simulator_seconds": 0.15858729201136157,
+      "simulator_passed": true
+    }
+  ]
+}

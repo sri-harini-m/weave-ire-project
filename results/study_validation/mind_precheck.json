@@ -1,0 +1,111 @@
+{
+  "bundle": "results/recommendation_pilot/20261110T151206823348Z_3bd26945",
+  "data_kind": "real MIND pilot; limited populations",
+  "manifest_verified_before_rebuild": true,
+  "population_count": 640,
+  "complete_populations": 640,
+  "condition_count": 320,
+  "slate_sizes": [
+    5,
+    10,
+    25,
+    50,
+    500
+  ],
+  "history_modes": [
+    false,
+    true
+  ],
+  "mmr_weights": [
+    0.0,
+    0.3,
+    0.6,
+    0.9,
+    1.0
+  ],
+  "final_model_count": 640,
+  "intermediate_model_count": 0,
+  "models_reloaded": 640,
+  "reloaded_algorithms": {
+    "none": 40,
+    "random": 40,
+    "popularity": 40,
+    "content": 40,
+    "bm25": 40,
+    "mf": 40,
+    "mmr": 200,
+    "ideal": 40,
+    "calibrated": 40,
+    "fatigue_popularity": 40,
+    "fatigue_mf": 40,
+    "fatigue_content": 40
+  },
+  "world_hardlinks_verified": 640,
+  "shared_world_files": {
+    "/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/recommendation_pilot/20261110T151206823348Z_3bd26945/worlds/rho_0.5.npz": 640
+  },
+  "K500_none_equivalence": {
+    "matched_baselines": 8,
+    "method_population_comparisons": 120,
+    "array_equality_checks": 480,
+    "fields": [
+      "seq",
+      "val",
+      "pen",
+      "left_at"
+    ],
+    "equal": true
+  },
+  "pair_tables": {
+    "paired_comparison_coverage.csv": {
+      "rows": 3,
+      "columns": 4
+    },
+    "paired_fatigue_feedback.csv": {
+      "rows": 120,
+      "columns": 130
+    },
+    "paired_fatigue_feedback_summary.csv": {
+      "rows": 60,
+      "columns": 127
+    },
+    "paired_history_visibility.csv": {
+      "rows": 320,
+      "columns": 130
+    },
+    "paired_history_visibility_summary.csv": {
+      "rows": 160,
+      "columns": 127
+    },
+    "paired_vs_none.csv": {
+      "rows": 600,
+      "columns": 130
+    },
+    "paired_vs_none_summary.csv": {
+      "rows": 300,
+      "columns": 127
+    }
+  },
+  "pair_coverage_rows": [
+    {
+      "comparison": "paired_history_visibility",
+      "candidate_left_rows": 320,
+      "matched_rows": 320,
+      "unmatched_left_rows": 0
+    },
+    {
+      "comparison": "paired_fatigue_feedback",
+      "candidate_left_rows": 120,
+      "matched_rows": 120,
+      "unmatched_left_rows": 0
+    },
+    {
+      "comparison": "paired_vs_none",
+      "candidate_left_rows": 600,
+      "matched_rows": 600,
+      "unmatched_left_rows": 0
+    }
+  ],
+  "initial_check_seconds": 10.028344750055112,
+  "raw_file_count": 19841
+}

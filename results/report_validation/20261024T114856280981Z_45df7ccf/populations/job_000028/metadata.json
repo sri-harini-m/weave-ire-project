@@ -1,0 +1,44 @@
+{
+  "algorithm": "popularity",
+  "data_kind": "synthetic",
+  "initial_histories": null,
+  "job_id": 28,
+  "params": {
+    "T": 8,
+    "beta": 1.0,
+    "common_from_popularity": false,
+    "fatigue_aware": true,
+    "fatigue_decay": 0.8,
+    "fatigue_rho": 0.8,
+    "gamma": 1.0,
+    "info": "none",
+    "outside_option": null,
+    "phi": 0.5,
+    "sigma": 1.0,
+    "sigma_bar": 1.0,
+    "sigma_i": 1.0
+  },
+  "pop": 1,
+  "population": 1,
+  "recommender": "popularity",
+  "recommender_settings": {
+    "K": 5,
+    "prior_weight": 1.0
+  },
+  "rho": 0.5,
+  "seed": 73279127,
+  "user_ids": [
+    "synthetic_reader_50",
+    "synthetic_reader_73",
+    "synthetic_reader_20",
+    "synthetic_reader_63",
+    "synthetic_reader_26",
+    "synthetic_reader_85",
+    "synthetic_reader_0",
+    "synthetic_reader_27",
+    "synthetic_reader_42",
+    "synthetic_reader_61",
+    "synthetic_reader_45",
+    "synthetic_reader_87"
+  ]
+}

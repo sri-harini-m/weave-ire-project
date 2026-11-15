@@ -1,0 +1,22 @@
+Saving complete MIND run to: results/recommendation_pilot/20261110T151206823348Z_3bd26945
+World: {'N': 500, 'rho': 0.5, 'corr_mean': 0.1180644148247818, 'corr_p50': 0.09510579938500405, 'corr_p99': 0.3934222583624887, 'min_eig': -1.7705394268322368e-15, 'n_categories': 14}
+                    cat_entropy  homogeneity  welfare_net  fatigue
+recommender                                                       
+bm25                      0.325        0.048        2.022    0.219
+calibrated                0.296        0.051        2.290    0.269
+content                   0.341        0.050        2.319    0.285
+fatigue_content           0.481        0.051        2.276    0.274
+fatigue_mf                0.213        0.155        2.148    0.107
+fatigue_popularity        0.234        0.137        1.760    0.153
+ideal                     0.369        0.048        3.189    0.279
+mf                        0.215        0.156        2.139    0.107
+mmr_0                     0.341        0.050        2.319    0.285
+mmr_0.3                   0.355        0.048        2.339    0.288
+mmr_0.6                   0.362        0.051        2.308    0.286
+mmr_0.9                   0.366        0.049        2.288    0.284
+mmr_1                     0.364        0.047        2.301    0.282
+none                      0.369        0.044        2.398    0.281
+popularity                0.234        0.137        1.760    0.153
+random                    0.282        0.018        1.971    0.147
+Saved to results/recommendation_pilot/20261110T151206823348Z_3bd26945
+Saved run: results/recommendation_pilot/20261110T151206823348Z_3bd26945

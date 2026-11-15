@@ -1,0 +1,24 @@
+SYNTHETIC ENGINEERING CHECK: not MIND research findings
+Saving complete run to: results/report_validation/20261024T114856280981Z_45df7ccf
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/reporting.py:266: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+Archived population runs: 42
+Report preparation can now use saved arrays without running the simulator.

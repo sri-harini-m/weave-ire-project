@@ -1,0 +1,91 @@
+{
+  "data_kind": "synthetic engineering check; not MIND research findings",
+  "bundle": "results/additional_validation/archive/20261024T122553407921Z_360a7f34",
+  "tests": {
+    "exit_code": 0,
+    "passed": 160,
+    "seconds": 18.12,
+    "warnings": 1,
+    "warning": "Pandas4Warning: DataFrame.join rsuffix deprecation",
+    "log": "results/additional_validation/tests.log"
+  },
+  "registered_names": [
+    "none",
+    "random",
+    "popularity",
+    "content",
+    "mmr",
+    "bm25",
+    "mf"
+  ],
+  "benchmark": {
+    "settings": {
+      "users": 100,
+      "articles": 500,
+      "rounds": 20,
+      "dimensions": 384,
+      "k": 10,
+      "seed": 42
+    },
+    "all_contract_passed": true,
+    "all_simulator_passed": true,
+    "all_below_60_seconds": true,
+    "simulator_seconds": {
+      "none": 0.14129004199639894,
+      "random": 0.1988545840140432,
+      "popularity": 0.18348341700038873,
+      "content": 0.22530670801643282,
+      "mmr": 0.22967241698643193,
+      "bm25": 0.2518267910054419,
+      "mf": 0.28398066697991453
+    },
+    "file": "results/additional_validation/timing.json"
+  },
+  "generation": {
+    "exit_code": 0,
+    "elapsed_seconds": 7.484409582975786
+  },
+  "offline_rebuild": {
+    "exit_code": 0,
+    "elapsed_seconds": 5.446291707979981,
+    "simulation_rerun": false
+  },
+  "raw_file_count": 2970,
+  "raw_checksums_unchanged": true,
+  "metric_csv_checksums_unchanged": true,
+  "manifest": {
+    "entries": 3057,
+    "verified": true,
+    "unlisted": []
+  },
+  "file_count": 3058,
+  "population_count": 54,
+  "condition_count": 18,
+  "metric_count": 27,
+  "figure_png_count": 17,
+  "figure_svg_count": 17,
+  "model_snapshots": 972,
+  "new_algorithm_archive_replays": {
+    "bm25": {
+      "population": "results/additional_validation/archive/20261024T122553407921Z_360a7f34/populations/job_000012",
+      "exact_round_replays": 8,
+      "extra_fields": [
+        "query_texts",
+        "profiles"
+      ],
+      "article_text_count": 60
+    },
+    "mf": {
+      "population": "results/additional_validation/archive/20261024T122553407921Z_360a7f34/populations/job_000015",
+      "exact_round_replays": 8,
+      "extra_fields": [
+        "query_texts",
+        "profiles"
+      ],
+      "article_text_count": 60
+    }
+  },
+  "cli_help_and_diff_check": {
+    "exit_code": 0
+  }
+}

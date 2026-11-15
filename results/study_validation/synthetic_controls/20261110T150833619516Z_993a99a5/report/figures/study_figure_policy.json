@@ -1,0 +1,40 @@
+{
+  "canvas_inches": [
+    15,
+    10
+  ],
+  "max_lines_per_page": 16,
+  "metrics": [
+    "cat_entropy",
+    "homogeneity",
+    "welfare_net",
+    "fatigue"
+  ],
+  "files": [
+    "study_slate_size_F000_page_00",
+    "study_slate_size_F001_page_00",
+    "study_slate_size_F002_page_00",
+    "study_slate_size_F003_page_00",
+    "study_mmr_weight_M000_page_00",
+    "study_mmr_weight_M001_page_00",
+    "study_mmr_weight_M002_page_00",
+    "study_mmr_weight_M003_page_00",
+    "study_mmr_weight_M004_page_00",
+    "study_mmr_weight_M005_page_00",
+    "study_mmr_weight_M006_page_00",
+    "study_mmr_weight_M007_page_00",
+    "study_mmr_weight_M008_page_00",
+    "study_mmr_weight_M009_page_00",
+    "study_mmr_weight_M010_page_00",
+    "study_mmr_weight_M011_page_00",
+    "study_mmr_weight_M012_page_00",
+    "study_mmr_weight_M013_page_00",
+    "study_mmr_weight_M014_page_00",
+    "study_mmr_weight_M015_page_00",
+    "study_mmr_weight_M016_page_00",
+    "study_mmr_weight_M017_page_00",
+    "study_mmr_weight_M018_page_00",
+    "study_mmr_weight_M019_page_00"
+  ],
+  "notes": "No conditions pooled. Time-curve values remain in curves_summary.csv; large-study figures focus on K and MMR-weight comparisons."
+}

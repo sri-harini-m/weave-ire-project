@@ -1,0 +1,46 @@
+{
+  "algorithm": "content",
+  "archive": {
+    "diagnostics": false,
+    "shared_world_reference": "/Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/results/study_validation/synthetic_controls/20261110T150833619516Z_993a99a5/worlds/rho_0.5.npz",
+    "snapshot_policy": "final"
+  },
+  "data_kind": "synthetic",
+  "initial_histories": null,
+  "job_id": 147,
+  "params": {
+    "T": 3,
+    "beta": 1.0,
+    "boredom_threshold": 0.25,
+    "common_from_popularity": false,
+    "fatigue_aware": true,
+    "fatigue_decay": 0.8,
+    "fatigue_rho": 0.8,
+    "gamma": 1.0,
+    "info": "none",
+    "outside_option": 0.0,
+    "phi": 0.0,
+    "reader_history_visible": true,
+    "sigma": 1.0,
+    "sigma_bar": 1.0,
+    "sigma_i": 1.0
+  },
+  "pop": 0,
+  "population": 0,
+  "recommender": "content",
+  "recommender_settings": {
+    "K": 500,
+    "prior_weight": 1.0,
+    "profile_weight": 1.0
+  },
+  "reference_only": false,
+  "requested_K": 500,
+  "rho": 0.5,
+  "seed": 104179126,
+  "user_ids": [
+    "synthetic_reader_22",
+    "synthetic_reader_68",
+    "synthetic_reader_85",
+    "synthetic_reader_17"
+  ]
+}

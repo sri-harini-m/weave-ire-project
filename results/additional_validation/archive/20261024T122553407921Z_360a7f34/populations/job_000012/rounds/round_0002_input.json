@@ -1,0 +1,69 @@
+{
+  "extra": {
+    "query_texts": [
+      "technology",
+      "business",
+      "science",
+      "science",
+      "technology",
+      "technology",
+      "business",
+      "health",
+      "science",
+      "business",
+      "health",
+      "sports"
+    ]
+  },
+  "history": [
+    [
+      14,
+      10
+    ],
+    [
+      23,
+      24
+    ],
+    [
+      6,
+      45
+    ],
+    [
+      6,
+      46
+    ],
+    [
+      14,
+      10
+    ],
+    [
+      10,
+      14
+    ],
+    [
+      0,
+      24
+    ],
+    [
+      7,
+      15
+    ],
+    [
+      28,
+      5
+    ],
+    [
+      2,
+      29
+    ],
+    [
+      15,
+      18
+    ],
+    [
+      36,
+      11
+    ]
+  ],
+  "t": 2
+}

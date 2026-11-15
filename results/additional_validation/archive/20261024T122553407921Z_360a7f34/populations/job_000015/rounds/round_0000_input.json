@@ -1,0 +1,33 @@
+{
+  "extra": {
+    "query_texts": [
+      "technology",
+      "business",
+      "science",
+      "science",
+      "technology",
+      "technology",
+      "business",
+      "health",
+      "science",
+      "business",
+      "health",
+      "sports"
+    ]
+  },
+  "history": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "t": 0
+}

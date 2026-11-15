@@ -1,0 +1,11 @@
+# Python 3.10+; simulation, recommenders, and experiment outputs.
+numpy
+pandas
+pyyaml
+matplotlib
+
+# MIND article embeddings.
+sentence-transformers
+
+# Simulator and recommender tests.
+pytest

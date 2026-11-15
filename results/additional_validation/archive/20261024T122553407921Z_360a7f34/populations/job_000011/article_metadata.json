@@ -1,0 +1,362 @@
+[
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_0",
+    "title": "business news update 0"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_1",
+    "title": "technology news update 1"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_2",
+    "title": "business news update 2"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_3",
+    "title": "sports news update 3"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_4",
+    "title": "health news update 4"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_5",
+    "title": "science news update 5"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_6",
+    "title": "science news update 6"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_7",
+    "title": "health news update 7"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_8",
+    "title": "health news update 8"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_9",
+    "title": "health news update 9"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_10",
+    "title": "technology news update 10"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_11",
+    "title": "sports news update 11"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_12",
+    "title": "politics news update 12"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_13",
+    "title": "technology news update 13"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_14",
+    "title": "technology news update 14"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_15",
+    "title": "health news update 15"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_16",
+    "title": "sports news update 16"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_17",
+    "title": "politics news update 17"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_18",
+    "title": "health news update 18"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_19",
+    "title": "science news update 19"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_20",
+    "title": "health news update 20"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_21",
+    "title": "technology news update 21"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_22",
+    "title": "technology news update 22"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_23",
+    "title": "business news update 23"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_24",
+    "title": "business news update 24"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_25",
+    "title": "technology news update 25"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_26",
+    "title": "business news update 26"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_27",
+    "title": "technology news update 27"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_28",
+    "title": "science news update 28"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_29",
+    "title": "business news update 29"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_30",
+    "title": "politics news update 30"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_31",
+    "title": "health news update 31"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_32",
+    "title": "technology news update 32"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_33",
+    "title": "politics news update 33"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_34",
+    "title": "health news update 34"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_35",
+    "title": "health news update 35"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_36",
+    "title": "sports news update 36"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_37",
+    "title": "sports news update 37"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_38",
+    "title": "politics news update 38"
+  },
+  {
+    "abstract": "Synthetic report about business",
+    "category": 3,
+    "news_id": "synthetic_39",
+    "title": "business news update 39"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_40",
+    "title": "technology news update 40"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_41",
+    "title": "technology news update 41"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_42",
+    "title": "health news update 42"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_43",
+    "title": "health news update 43"
+  },
+  {
+    "abstract": "Synthetic report about sports",
+    "category": 0,
+    "news_id": "synthetic_44",
+    "title": "sports news update 44"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_45",
+    "title": "science news update 45"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_46",
+    "title": "science news update 46"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_47",
+    "title": "politics news update 47"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_48",
+    "title": "technology news update 48"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_49",
+    "title": "politics news update 49"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_50",
+    "title": "health news update 50"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_51",
+    "title": "science news update 51"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_52",
+    "title": "science news update 52"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_53",
+    "title": "politics news update 53"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_54",
+    "title": "politics news update 54"
+  },
+  {
+    "abstract": "Synthetic report about politics",
+    "category": 1,
+    "news_id": "synthetic_55",
+    "title": "politics news update 55"
+  },
+  {
+    "abstract": "Synthetic report about technology",
+    "category": 2,
+    "news_id": "synthetic_56",
+    "title": "technology news update 56"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_57",
+    "title": "health news update 57"
+  },
+  {
+    "abstract": "Synthetic report about science",
+    "category": 5,
+    "news_id": "synthetic_58",
+    "title": "science news update 58"
+  },
+  {
+    "abstract": "Synthetic report about health",
+    "category": 4,
+    "news_id": "synthetic_59",
+    "title": "health news update 59"
+  }
+]

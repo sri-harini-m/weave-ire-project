@@ -1,0 +1,761 @@
+{
+  "schema_version": 1,
+  "jobs": [
+    {
+      "directory": "job_000000",
+      "job_id": 0,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000001",
+      "job_id": 1,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000002",
+      "job_id": 2,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000003",
+      "job_id": 3,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000004",
+      "job_id": 4,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000005",
+      "job_id": 5,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000006",
+      "job_id": 6,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000007",
+      "job_id": 7,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000008",
+      "job_id": 8,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000009",
+      "job_id": 9,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000010",
+      "job_id": 10,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000011",
+      "job_id": 11,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000012",
+      "job_id": 12,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000013",
+      "job_id": 13,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000014",
+      "job_id": 14,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000015",
+      "job_id": 15,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000016",
+      "job_id": 16,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000017",
+      "job_id": 17,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000018",
+      "job_id": 18,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000019",
+      "job_id": 19,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000020",
+      "job_id": 20,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000021",
+      "job_id": 21,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000022",
+      "job_id": 22,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000023",
+      "job_id": 23,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000024",
+      "job_id": 24,
+      "population": 0,
+      "seed": 44499126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    },
+    {
+      "directory": "job_000025",
+      "job_id": 25,
+      "population": 1,
+      "seed": 44499127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    },
+    {
+      "directory": "job_000026",
+      "job_id": 26,
+      "population": 2,
+      "seed": 44499128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.0,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    },
+    {
+      "directory": "job_000027",
+      "job_id": 27,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000028",
+      "job_id": 28,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000029",
+      "job_id": 29,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "none"
+    },
+    {
+      "directory": "job_000030",
+      "job_id": 30,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000031",
+      "job_id": 31,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000032",
+      "job_id": 32,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "random"
+    },
+    {
+      "directory": "job_000033",
+      "job_id": 33,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000034",
+      "job_id": 34,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000035",
+      "job_id": 35,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "popularity"
+    },
+    {
+      "directory": "job_000036",
+      "job_id": 36,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000037",
+      "job_id": 37,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000038",
+      "job_id": 38,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "content"
+    },
+    {
+      "directory": "job_000039",
+      "job_id": 39,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000040",
+      "job_id": 40,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000041",
+      "job_id": 41,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "bm25"
+    },
+    {
+      "directory": "job_000042",
+      "job_id": 42,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000043",
+      "job_id": 43,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000044",
+      "job_id": 44,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mf"
+    },
+    {
+      "directory": "job_000045",
+      "job_id": 45,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000046",
+      "job_id": 46,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000047",
+      "job_id": 47,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0"
+    },
+    {
+      "directory": "job_000048",
+      "job_id": 48,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000049",
+      "job_id": 49,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000050",
+      "job_id": 50,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.3"
+    },
+    {
+      "directory": "job_000051",
+      "job_id": 51,
+      "population": 0,
+      "seed": 73279126,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    },
+    {
+      "directory": "job_000052",
+      "job_id": 52,
+      "population": 1,
+      "seed": 73279127,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    },
+    {
+      "directory": "job_000053",
+      "job_id": 53,
+      "population": 2,
+      "seed": 73279128,
+      "rho": 0.5,
+      "params": {
+        "T": 8,
+        "gamma": 1.0,
+        "phi": 0.5,
+        "info": "none"
+      },
+      "recommender": "mmr_0.6"
+    }
+  ]
+}

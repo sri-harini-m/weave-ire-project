@@ -1,0 +1,5 @@
+user,rounds,n_consumed,local_distance,diversity,welfare,welfare_net,fatigue,cat_entropy,n_categories
+0,0,0,,,,,,,
+1,0,0,,,,,,,
+2,0,0,,,,,,,
+3,3,3,0.5166349752298263,0.5294686008676054,1.6711198326027732,1.6711198326027732,0.0,0.355245321275764,2.0

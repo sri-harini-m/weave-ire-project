@@ -1,0 +1,1326 @@
+diff --git a/README.md b/README.md
+index 46e3e90..2f534af 100644
+--- a/README.md
++++ b/README.md
+@@ -4,6 +4,8 @@ Person B's recommender input contract, defaults, and checks are in
+ [docs/recommenders.md](docs/recommenders.md).
+ Saved report artifacts and offline rebuild commands are in
+ [docs/report_artifacts.md](docs/report_artifacts.md).
++The K/history/MMR sweeps, ideal reference, calibrated ranking and explicit fatigue
++feedback are documented in [docs/recommendation_study.md](docs/recommendation_study.md).
+ 
+ Agent-based simulation (Aridor, Goncalves & Sikdar, "Deconstructing the Filter
+ Bubble") extended to news (MIND-small) with user fatigue, used to evaluate
+diff --git a/scripts/check_recommenders.py b/scripts/check_recommenders.py
+index 3a6d6a1..758a078 100644
+--- a/scripts/check_recommenders.py
++++ b/scripts/check_recommenders.py
+@@ -56,6 +56,8 @@ def benchmark(world, profiles, name, rounds, k, seed, simulator=False):
+     rec = REGISTRY[name](K=k)
+     start = perf_counter()
+     rec.reset(world, users, np.random.default_rng(seed))
++    if getattr(rec, "reference_only", False):
++        rec.set_reference_values(profiles @ world.profile_vecs.T)
+     reset_seconds = perf_counter() - start
+     state = SimState(world, 0, np.ones((users, world.N), dtype=bool),
+                      [[] for _ in range(users)], np.full((users, world.N), np.nan),
+diff --git a/scripts/run_news.py b/scripts/run_news.py
+index a53b038..7248fd8 100644
+--- a/scripts/run_news.py
++++ b/scripts/run_news.py
+@@ -15,6 +15,7 @@ from src.sim.news_users import attach_user_pool, sample_news_users
+ from src.sim.recommenders import REGISTRY
+ from src.sim.recommender_config import recommender_options
+ from src.sim.run_bundle import RunBundle
++from src.sim.study import add_study_arguments, apply_visibility, factories, slate_sizes, MMR_WEIGHTS, write_comparisons
+ from src.sim.world import describe, news_world
+ 
+ METRICS = ["local_distance", "diversity", "cat_entropy", "n_categories",
+@@ -70,6 +71,7 @@ def main():
+     ap.add_argument("--config", default="config.yaml")
+     ap.add_argument("--workers", type=int, default=1)
+     ap.add_argument("--n-pop", type=int, default=None)
++    add_study_arguments(ap)
+     ap.add_argument("--recommenders", nargs="*", default=None, choices=list(REGISTRY),
+                     help=f"slate recommenders to compare: {list(REGISTRY)}")
+     weights = ap.add_mutually_exclusive_group()
+@@ -97,22 +99,16 @@ def execute_news(args, full, out):
+     cfg = full["news"]
+     store = MindStore(args.config)
+ 
+-    grid = dict(cfg["grid"])
++    grid = apply_visibility(args, dict(cfg["grid"]))
++    sizes = slate_sizes(args, full.get("recommenders", {}).get("K", 10))
+     recs, group = None, "info"
+     if args.recommenders:
+         settings = full.get("recommenders", {})
+-        recs = {}
+-        for r in args.recommenders:
+-            options = recommender_options(r, settings)
+-            if r == "mmr":
+-                options["diversity_weight"] = args.mmr_diversity_weight \
+-                    if args.mmr_diversity_weight is not None \
+-                    else options.get("diversity_weight", 0.3)
+-                if args.mmr_diversity_weights is not None:
+-                    for weight in args.mmr_diversity_weights:
+-                        recs[f"mmr_{weight:g}"] = partial(REGISTRY[r], **{**options, "diversity_weight": weight})
+-                    continue
+-            recs[r] = partial(REGISTRY[r], **options)
++        sweep = getattr(args, "mmr_diversity_weights", None)
++        if sweep is None:
++            single = getattr(args, "mmr_diversity_weight", None)
++            sweep = [single] if single is not None else MMR_WEIGHTS
++        recs = factories(args.recommenders, settings, sweep)
+         grid["info"] = ["none"]
+         group = "recommender"
+ 
+@@ -122,21 +118,28 @@ def execute_news(args, full, out):
+     (out / "world.json").write_text(json.dumps(diag, indent=2))
+     print("World:", diag)
+ 
+-    df, curves = run_grid(world_fn, grid, base={**cfg["base"], "T": cfg["T"]},
++    base = {**cfg["base"], "T": cfg["T"]}
++    if getattr(args, "outside_option", None) is not None:
++        base["outside_option"] = args.outside_option
++    df, curves = run_grid(world_fn, grid, base=base,
+                           n_pop=args.n_pop or cfg["n_pop"], U=cfg["U"],
+                           seed=cfg["seed"], recommenders=recs,
+                           users_fn=partial(sample_news_users, U=cfg["U"]),
+                           workers=args.workers, keep_curves=True,
+-                          archive_dir=None if getattr(args, "no_archive", False) else out)
++                          archive_dir=None if getattr(args, "no_archive", False) else out,
++                          slate_sizes=sizes, snapshot_policy=getattr(args, "snapshot_policy", "final"),
++                          diagnostics=getattr(args, "archive_diagnostics", False))
+     df.to_csv(out / "original_populations.csv", index=False)
+     curves.to_csv(out / "original_curves.csv", index=False)
+-    by = [k for k in grid if k != "info"] + ["info", "recommender"]
++    by = list(dict.fromkeys([k for k in grid if k != "info"] + ["info", "recommender", "K", "reader_history_visible"]))
+     s = summarise(df, by, METRICS)
+     s.to_csv(out / "original_summary.csv", index=False)
+-    plot(s, curves, out / "original_figures.png", group)
++    if len(s) <= 24:
++        plot(s, curves, out / "original_figures.png", group)
+     if not getattr(args, "no_archive", False):
+         from src.sim.reporting import rebuild_report
+         rebuild_report(out)
++        write_comparisons(out)
+     print(s.groupby(group)[["cat_entropy", "homogeneity", "welfare_net", "fatigue"]]
+           .mean().round(3))
+     print("Saved to", out)
+diff --git a/scripts/run_report.py b/scripts/run_report.py
+index a59ef7d..90828a0 100644
+--- a/scripts/run_report.py
++++ b/scripts/run_report.py
+@@ -16,6 +16,7 @@ from src.sim.news_users import sample_news_users
+ from src.sim.recommenders import REGISTRY
+ from src.sim.run_bundle import RunBundle, verify_manifest, write_manifest
+ from src.sim.world import World, _corr_from_distance
++from src.sim.study import add_study_arguments, apply_visibility, factories, slate_sizes, MMR_WEIGHTS, write_comparisons
+ 
+ 
+ def synthetic_world(rho, N=60, dimensions=16, seed=42, pool_size=100):
+@@ -41,6 +42,10 @@ def synthetic_world(rho, N=60, dimensions=16, seed=42, pool_size=100):
+                               for i in range(N)]
+     world.user_pool["query_texts"] = [topics[int(np.argmax(p[:min(6, dimensions)]))]
+                                       for p in profiles]
++    categories = np.unique(world.cats)
++    world.user_pool["category_profiles"] = np.array(
++        [[20. if topics[int(c)] == query else 0. for c in categories]
++         for query in world.user_pool["query_texts"]])
+     return world
+ 
+ 
+@@ -54,22 +59,24 @@ def main():
+     ap.add_argument("--rounds", type=int, default=8)
+     ap.add_argument("--n-pop", type=int, default=3)
+     ap.add_argument("--workers", type=int, default=1)
+-    ap.add_argument("--k", type=int, default=5)
++    add_study_arguments(ap)
+     ap.add_argument("--seed", type=int, default=42)
+     ap.add_argument("--rho", type=float, nargs="+", default=[0.5])
+     ap.add_argument("--fatigue", type=float, nargs="+", default=[0., 0.5])
+-    ap.add_argument("--mmr-weights", type=float, nargs="+", default=[0., 0.3, 0.6])
++    ap.add_argument("--mmr-weights", type=float, nargs="+", default=MMR_WEIGHTS)
+     ap.add_argument("--recommenders", nargs="+", choices=list(REGISTRY),
+-                    default=["none", "random", "popularity", "content", "bm25", "mf", "mmr"])
++                    default=list(REGISTRY))
+     args = ap.parse_args()
+     if args.rebuild is not None:
+         from src.sim.reporting import rebuild_report
+         verify_manifest(args.rebuild)
+         rebuild_report(args.rebuild)
++        write_comparisons(args.rebuild)
+         write_manifest(args.rebuild)
+         print("Rebuilt saved outputs without simulation:", args.rebuild)
+         return
+-    if min(args.users, args.dimensions, args.rounds, args.n_pop, args.k, args.workers) < 1 \
++    sizes = slate_sizes(args, default=5)
++    if min(args.users, args.dimensions, args.rounds, args.n_pop, args.workers) < 1 \
+             or args.articles < 2:
+         ap.error("counts must be positive; articles must be at least two")
+     if any(not 0 <= value < 1 for value in args.rho):
+@@ -79,25 +86,27 @@ def main():
+     if any(not np.isfinite(value) or value < 0 for value in args.fatigue):
+         ap.error("fatigue must be finite and nonnegative")
+     config = {"data_kind": "synthetic", "settings": vars(args).copy(),
+-              "grid": {"rho": args.rho, "phi": args.fatigue, "info": ["none"]}}
+-    recs = {name: partial(REGISTRY[name], K=args.k)
+-            for name in args.recommenders if name != "mmr"}
+-    if "mmr" in args.recommenders:
+-        for weight in args.mmr_weights:
+-            recs[f"mmr_{weight:g}"] = partial(REGISTRY["mmr"], K=args.k, diversity_weight=weight)
++              "grid": apply_visibility(args, {"rho": args.rho, "phi": args.fatigue, "info": ["none"]})}
++    recs = factories(args.recommenders, {"K": sizes[0]}, args.mmr_weights)
+     with RunBundle(args.out, config, vars(args), "synthetic") as bundle:
+         print("SYNTHETIC ENGINEERING CHECK: not MIND research findings")
+         print("Saving complete run to:", bundle.path)
+         world_fn = partial(synthetic_world, N=args.articles, dimensions=args.dimensions,
+                            seed=args.seed, pool_size=max(args.users, 100))
+-        df, curves = run_grid(world_fn, config["grid"], base={"T": args.rounds, "gamma": 1.0},
++        base = {"T": args.rounds, "gamma": 1.0}
++        if args.outside_option is not None:
++            base["outside_option"] = args.outside_option
++        df, curves = run_grid(world_fn, config["grid"], base=base,
+                               U=args.users, n_pop=args.n_pop, seed=args.seed,
+                               recommenders=recs, users_fn=partial(sample_news_users, U=args.users),
+-                              workers=args.workers, keep_curves=True, archive_dir=bundle.path)
++                              workers=args.workers, keep_curves=True, archive_dir=bundle.path,
++                              slate_sizes=sizes, snapshot_policy=args.snapshot_policy,
++                              diagnostics=args.archive_diagnostics)
+         df.to_csv(bundle.path / "original_populations.csv", index=False)
+         curves.to_csv(bundle.path / "original_curves.csv", index=False)
+         from src.sim.reporting import rebuild_report
+         rebuild_report(bundle.path)
++        write_comparisons(bundle.path)
+         print("Archived population runs:", len(df))
+         print("Report preparation can now use saved arrays without running the simulator.")
+     print("Saved run:", bundle.path)
+diff --git a/src/sim/artifacts.py b/src/sim/artifacts.py
+index 5b3286c..85d5a00 100644
+--- a/src/sim/artifacts.py
++++ b/src/sim/artifacts.py
+@@ -4,10 +4,12 @@ Arrays use NPZ without pickle. JSON stores schemas and metadata. Hidden simulato
+ values are saved separately from observable recommender inputs.
+ """
+ from datetime import datetime, timezone
++import errno
+ import hashlib
+ import json
+ import os
+ from pathlib import Path
++import shutil
+ import tempfile
+ from time import perf_counter
+ 
+@@ -108,6 +110,26 @@ def save_world(world, path):
+                               "article_metadata": getattr(world, "article_metadata", None)})
+ 
+ 
++def _share_world(world, source, destination):
++    """Reuse an immutable world file after checking only its saved header."""
++    if not source.is_file():
++        raise FileNotFoundError(f"Shared world archive does not exist: {source}")
++    with np.load(source, allow_pickle=False) as stored:
++        header = json.loads(str(stored["__metadata__"]))
++    if header.get("schema_version") != SCHEMA_VERSION:
++        raise ValueError("Unsupported shared world archive schema")
++    if header.get("metadata", {}).get("digest") != world_digest(world):
++        raise ValueError("Shared world archive does not match the supplied catalogue")
++    try:
++        os.link(source, destination)
++    except OSError as error:
++        if error.errno != errno.EXDEV:
++            raise
++        # Exclusive creation retains the same no-overwrite guarantee across filesystems.
++        with source.open("rb") as incoming, destination.open("xb") as outgoing:
++            shutil.copyfileobj(incoming, outgoing)
++
++
+ def load_world(path):
+     path = Path(path)
+     if path.is_dir():
+@@ -142,7 +164,8 @@ def save_checkpoint(rec, path):
+         raise ValueError("Unsupported random bit generator")
+     metadata = {"algorithm": rec.name, "settings": _model_settings(rec),
+                 "U": rec.U, "world_digest": world_digest(rec.world),
+-                "rng": rec.rng.bit_generator.state}
++                "rng": rec.rng.bit_generator.state,
++                "privileged_reference": rec.name == "ideal"}
+     if rec.name == "bm25":
+         metadata["article_text_digest"] = hashlib.sha256(
+             _json_text(rec.world.article_metadata).encode()).hexdigest()
+@@ -152,6 +175,15 @@ def save_checkpoint(rec, path):
+ 
+ def load_checkpoint(path, world):
+     """Restore one known algorithm without importing arbitrary classes."""
++    path = Path(path)
++    if not path.is_file():
++        metadata_path = path.parent.parent / "metadata.json"
++        policy = None
++        if metadata_path.is_file():
++            policy = json.loads(metadata_path.read_text(encoding="utf-8")).get("archive", {}).get(
++                "snapshot_policy")
++        policy_note = f"; snapshot_policy={policy!r}" if policy is not None else ""
++        raise FileNotFoundError(f"Checkpoint was not saved: {path}{policy_note}")
+     values, metadata = _read_npz(path)
+     if metadata["world_digest"] != world_digest(world):
+         raise ValueError("Checkpoint world does not match the supplied catalogue")
+@@ -192,16 +224,32 @@ def load_state(population_path, t, world=None):
+ class PopulationArchive:
+     """Flush one population's inputs, model snapshots, and responses per round.
+ 
+-    This stores enough data to recompute reports and reproduce recommendations.
+-    It is not a simulator-resume implementation.
++    Every policy retains observable round inputs and responses for reports.
++    `all` also saves every model state for recommendation replay. `final` saves
++    only the final model, and `none` saves no models. Optional hidden diagnostics
++    are controlled separately. This is not a simulator-resume implementation.
+     """
+ 
+-    def __init__(self, path, metadata=None):
++    def __init__(self, path, metadata=None, snapshot_policy="all", diagnostics=True,
++                 shared_world_path=None):
++        if snapshot_policy not in ("all", "final", "none"):
++            raise ValueError("snapshot_policy must be 'all', 'final', or 'none'")
++        if not isinstance(diagnostics, bool):
++            raise ValueError("diagnostics must be a boolean")
++        self.snapshot_policy = snapshot_policy
++        self.diagnostics = diagnostics
++        self.shared_world_path = Path(shared_world_path).resolve() \
++            if shared_world_path is not None else None
+         self.path = Path(path)
+         self.path.mkdir(parents=True, exist_ok=False)
+         (self.path / "models").mkdir()
+         (self.path / "rounds").mkdir()
+-        self.metadata = metadata or {}
++        self.metadata = dict(metadata or {})
++        self.metadata["archive"] = {
++            "snapshot_policy": snapshot_policy, "diagnostics": diagnostics,
++        }
++        if self.shared_world_path is not None:
++            self.metadata["archive"]["shared_world_reference"] = str(self.shared_world_path)
+         self.started = False
+         self.finished = False
+         self._pending = None
+@@ -218,6 +266,8 @@ class PopulationArchive:
+                     "created_utc": self._created,
+                     "updated_utc": datetime.now(timezone.utc).isoformat(),
+                     "rounds_saved": self._rounds,
++                    "snapshot_policy": self.snapshot_policy,
++                    "diagnostics": self.diagnostics,
+                     "elapsed_seconds": perf_counter() - self._clock, **extra}
+         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path,
+                                          prefix=".status-", delete=False) as stream:
+@@ -237,7 +287,10 @@ class PopulationArchive:
+         if self.started or self.finished:
+             raise ValueError("Population archive already started or closed")
+         self.world, self._rec = world, rec
+-        save_world(world, self.path / "world.npz")
++        if self.shared_world_path is None:
++            save_world(world, self.path / "world.npz")
++        else:
++            _share_world(world, self.shared_world_path, self.path / "world.npz")
+         _write_json(self.path / "world.json", {"N": world.N, "rho": world.rho,
+                     "unit": world.unit, "kind": world.kind,
+                     "digest": world_digest(world)})
+@@ -251,9 +304,11 @@ class PopulationArchive:
+         _write_npz(self.path / "initial_observable.npz", observable,
+                    {"profiles_present": profiles is not None, "seen_present": seen is not None,
+                     "U": rec.U, "rng": rng.bit_generator.state})
+-        _write_npz(self.path / "initial_hidden.npz", initial,
+-                   {"purpose": "Simulator diagnostics only; never recommender inputs"})
+-        save_checkpoint(rec, self.path / "models" / "initial.npz")
++        if self.diagnostics:
++            _write_npz(self.path / "initial_hidden.npz", initial,
++                       {"purpose": "Simulator diagnostics only; never recommender inputs"})
++        if self.snapshot_policy == "all":
++            save_checkpoint(rec, self.path / "models" / "initial.npz")
+         self.started = True
+         self._status("running")
+ 
+@@ -265,25 +320,38 @@ class PopulationArchive:
+         prefix = self.path / "rounds" / f"round_{state.t:04d}_input"
+         arrays = {"available": state.available, "active": state.active,
+                   "ratings": state.ratings, "profiles": state.extra.get("profiles")}
+-        arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
++        if self.diagnostics:
++            arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
+         _write_npz(prefix.with_suffix(".npz"), arrays)
+         _write_json(prefix.with_suffix(".json"), {"t": state.t, "history": state.history,
+                     "extra": {k: v for k, v in state.extra.items() if k != "profiles"}})
+-        save_checkpoint(rec, self.path / "models" / f"before_{state.t:04d}.npz")
++        if self.snapshot_policy == "all":
++            save_checkpoint(rec, self.path / "models" / f"before_{state.t:04d}.npz")
+         self._pending = state.t
+         self._rec = rec
+ 
+-    def after_round(self, t, slates, users, items, feedback, rec, diagnostics=None):
++    def after_round(self, t, slates, users, items, feedback, rec, diagnostics=None,
++                    signals=None):
+         if self.finished or self._pending != t:
+             raise ValueError("Output must match the pending archived round")
++        signals = self._feedback_signals(signals, users, rec.U)
+         arrays = {"slates": np.empty((rec.U, 0), dtype=int) if slates is None else slates,
+                   "slate_is_none": slates is None, "users": users, "items": items,
+                   "feedback": feedback}
+-        arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
++        if self.diagnostics:
++            arrays.update({f"diagnostic_{key}": value for key, value in (diagnostics or {}).items()})
++        elif diagnostics is not None and "recommendation_seconds" in diagnostics:
++            seconds = np.asarray(diagnostics["recommendation_seconds"])
++            if seconds.ndim != 0 or not np.isfinite(seconds) or seconds < 0:
++                raise ValueError("recommendation_seconds must be a finite nonnegative scalar")
++            arrays["diagnostic_recommendation_seconds"] = seconds
++        arrays.update({f"feedback_{key}": value for key, value in signals.items()})
+         _write_npz(self.path / "rounds" / f"round_{t:04d}_output.npz", arrays)
+-        save_checkpoint(rec, self.path / "models" / f"after_{t:04d}.npz")
++        if self.snapshot_policy == "all":
++            save_checkpoint(rec, self.path / "models" / f"after_{t:04d}.npz")
+         response = {"t": t, "slate_is_none": slates is None, "slates": slates,
+-                    "users": users, "items": items, "feedback": feedback}
++                    "users": users, "items": items, "feedback": feedback,
++                    "signals": signals}
+         with (self.path / "responses.jsonl").open("a", encoding="utf-8") as stream:
+             stream.write(json.dumps(_jsonable(response), allow_nan=False) + "\n")
+             stream.flush()
+@@ -296,8 +364,11 @@ class PopulationArchive:
+     def finish(self, run):
+         if not self.started or self.finished or self._pending is not None:
+             raise ValueError("Cannot finish an unstarted, incomplete, or closed archive")
+-        _write_npz(self.path / "run.npz", run)
+-        save_checkpoint(self._rec, self.path / "models" / "final.npz")
++        saved_run = run if self.diagnostics else {
++            key: value for key, value in run.items() if key not in ("X", "V")}
++        _write_npz(self.path / "run.npz", saved_run)
++        if self.snapshot_policy != "none":
++            save_checkpoint(self._rec, self.path / "models" / "final.npz")
+         from .metrics import time_curves, user_metrics
+         user_metrics(self.world, run).to_csv(self.path / "user_metrics.csv", index=False)
+         curves = time_curves(self.world, run).reindex(
+@@ -306,6 +377,29 @@ class PopulationArchive:
+         self.finished = True
+         self._status("complete")
+ 
++    @staticmethod
++    def _feedback_signals(signals, users, U):
++        """Keep coarse observed boredom and departure feedback separate from diagnostics."""
++        if signals is None:
++            return {}
++        unknown = set(signals) - {"boredom", "left_users"}
++        if unknown:
++            raise ValueError("Unsupported observed feedback signals: " + ", ".join(sorted(unknown)))
++        saved = {}
++        if "boredom" in signals:
++            boredom = np.asarray(signals["boredom"])
++            if boredom.shape != (len(users),) or not np.isin(boredom, (0, 1)).all():
++                raise ValueError("boredom must contain one 0/1 flag per observed read")
++            saved["boredom"] = boredom.astype(np.int8)
++        if "left_users" in signals:
++            left_users = np.asarray(signals["left_users"])
++            if left_users.ndim != 1 or (left_users.size and (
++                    not np.issubdtype(left_users.dtype, np.integer)
++                    or (left_users < 0).any() or (left_users >= U).any())):
++                raise ValueError("left_users must contain reader indices in [0, U)")
++            saved["left_users"] = left_users.astype(int)
++        return saved
++
+     def fail(self, error):
+         if self.finished:
+             raise ValueError("Cannot mark a complete archive as failed")
+diff --git a/src/sim/experiment.py b/src/sim/experiment.py
+index f148818..eae658a 100644
+--- a/src/sim/experiment.py
++++ b/src/sim/experiment.py
+@@ -33,12 +33,12 @@ def _init(worlds):
+ 
+ def _one(job):
+     (rho, pdict, U, seed, rec_factory, users_fn, pop_id, keep_curves,
+-     archive_dir, job_id, label) = job
++     archive_dir, job_id, label, snapshot_policy, diagnostics, requested_k) = job
+     world = _WORLDS[rho]
+     p = Params(**pdict)
+     rng = np.random.default_rng(seed)
+     profiles, seen = users_fn(world, rng) if users_fn else (None, None)
+-    rec = rec_factory() if rec_factory else NoRecommender()
++    rec = rec_factory() if rec_factory else NoRecommender(K=requested_k or 10)
+     archive = None
+     if archive_dir is not None:
+         from .artifacts import PopulationArchive
+@@ -48,13 +48,18 @@ def _one(job):
+                                               "pop": pop_id, "seed": seed, "rho": rho,
+                                               "recommender": label or rec.name,
+                                               "algorithm": rec.name, "params": p.as_dict(),
++                                              "requested_K": requested_k,
++                                              "reference_only": bool(getattr(rec, "reference_only", False)),
+                                               "data_kind": "mind" if world.kind == "news" else world.kind,
+                                               "user_ids": getattr(world, "sampled_user_ids", None),
+                                               "initial_histories": getattr(world, "sampled_histories", None),
+-                                              "recommender_settings": settings})
++                                              "recommender_settings": settings},
++                                    snapshot_policy=snapshot_policy, diagnostics=diagnostics,
++                                    shared_world_path=Path(archive_dir) / "worlds" / f"rho_{rho}.npz")
+     try:
+         run = run_population(world, p, U, rng, rec, profiles, seen, recorder=archive,
+-                             query_texts=getattr(world, "sampled_query_texts", None))
++                             query_texts=getattr(world, "sampled_query_texts", None),
++                             category_profiles=getattr(world, "sampled_category_profiles", None))
+     except Exception as error:
+         if archive is not None:
+             archive.fail(error)
+@@ -62,6 +67,8 @@ def _one(job):
+     um = user_metrics(world, run)
+     row = {**pdict, "recommender": label or rec.name, "pop": pop_id,
+            "seed": seed, "job_id": job_id,
++           "requested_K": requested_k, "reader_history_visible": p.reader_history_visible,
++           "K": rec.K, **{k: v for k, v in rec.get_config().items() if k != "K"},
+            **um.drop(columns=["user"]).mean(numeric_only=True).to_dict(),
+            "homogeneity": homogeneity(run)}
+     curves = None
+@@ -75,7 +82,7 @@ def _one(job):
+ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
+              U: int = 100, seed: int = 0, recommenders: dict | None = None,
+              users_fn=None, workers: int = 1, keep_curves: bool = False,
+-             archive_dir=None):
++             archive_dir=None, slate_sizes=None, snapshot_policy="all", diagnostics=True):
+     """world_fn(rho) -> World (rebuilt only when rho changes).
+     grid: {param_name: [values]}; base: fixed Params overrides.
+     recommenders: {name: factory()} or None for the paper's no-slate setup.
+@@ -85,6 +92,11 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
+     archive_dir: optional unique run directory for all population artifacts.
+     """
+     base = base or {}
++    if snapshot_policy not in ("all", "final", "none"):
++        raise ValueError("snapshot_policy must be all, final or none")
++    sizes = [None] if slate_sizes is None else list(dict.fromkeys(slate_sizes))
++    if not sizes or any(k is not None and (isinstance(k, bool) or not isinstance(k, int) or k < 1) for k in sizes):
++        raise ValueError("slate_sizes must contain positive integers")
+     recs = recommenders or {None: None}
+     combos = expand_grid(grid)
+     worlds = {}
+@@ -94,24 +106,31 @@ def run_grid(world_fn, grid: dict, base: dict | None = None, n_pop: int = 10,
+         rho = pdict.pop("rho", base.get("rho", 0.5))
+         if rho not in worlds:
+             worlds[rho] = world_fn(rho)
+-        for rname, rfac in recs.items():
++        for requested_k, (rname, factory) in itertools.product(sizes, recs.items()):
++            from functools import partial
++            rfac = partial(factory, K=requested_k) if factory and requested_k is not None else factory
+             for k in range(n_pop):
+                 # Common random numbers: the seed ignores `info` and the
+                 # recommender, so every regime/recommender faces the SAME users
+                 # and true values. Differences are then caused by the regime.
+                 key = repr(sorted((a, b) for a, b in {**pdict, "rho": rho}.items()
+-                                  if a != "info"))
++                                  if a not in ("info", "reader_history_visible", "boredom_threshold")))
+                 s = seed * 1_000_003 + zlib.crc32(key.encode()) % 100_000 * 1000 + k
+                 jobs.append((rho, dict(pdict), U, s, rfac, users_fn, k, keep_curves,
+                              str(archive_dir) if archive_dir is not None else None,
+-                             len(jobs), rname))
++                             len(jobs), rname, snapshot_policy, diagnostics, requested_k))
+ 
+     if archive_dir is not None:
+         root = Path(archive_dir)
+         root.mkdir(parents=True, exist_ok=True)
++        from .artifacts import save_world
++        (root / "worlds").mkdir(exist_ok=True)
++        for rho, world in worlds.items():
++            save_world(world, root / "worlds" / f"rho_{rho}.npz")
+         expected = [{"directory": f"job_{j[9]:06d}", "job_id": j[9],
+                      "population": j[6], "seed": j[3], "rho": j[0],
+-                     "params": j[1], "recommender": j[10] or "none"} for j in jobs]
++                     "params": j[1], "recommender": j[10] or "none", "requested_K": j[13]}
++                    for j in jobs]
+         with (root / "expected_populations.json").open("x") as handle:
+             json.dump({"schema_version": 1, "jobs": expected}, handle, indent=2, default=str)
+     _init(worlds)
+@@ -138,5 +157,5 @@ def summarise(df: pd.DataFrame, by: list[str], metrics: list[str]) -> pd.DataFra
+     g = df.groupby(by)[metrics]
+     m, s, n = g.mean(), g.std(), g.count()
+     ci = 1.96 * s / np.sqrt(n)
+-    out = m.join(ci, rsuffix="_ci95")
++    out = m.join(ci.add_suffix("_ci95"))
+     return out.reset_index()
+diff --git a/src/sim/news_users.py b/src/sim/news_users.py
+index 35ff16d..6638f45 100644
+--- a/src/sim/news_users.py
++++ b/src/sim/news_users.py
+@@ -23,12 +23,18 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
+     histories = []
+     query_texts = []
+     article_records = store.articles.set_index("news_id").to_dict("index")
++    categories = np.unique(world.cats) if world.cats is not None else np.array([])
++    category_index = {category: i for i, category in enumerate(categories)}
++    category_profiles = np.zeros((len(uids), len(categories)))
+     for k, u in enumerate(uids):
+         hist = store.history(u)
+         histories.append(list(hist))
+         text = []
+         for news_id in hist:
+             article = article_records.get(news_id, {})
++            category = article.get("category")
++            if category in category_index:
++                category_profiles[k, category_index[category]] += 1
+             text.extend(article[key] for key in ("title", "abstract")
+                         if isinstance(article.get(key), str))
+         query_texts.append(" ".join(text))
+@@ -38,7 +44,8 @@ def attach_user_pool(world, store, max_users: int = 5000, seed: int = 0,
+                 if n in pos:
+                     seen[k, pos[n]] = True
+     world.user_pool = {"ids": np.array(uids), "profiles": profiles, "seen": seen,
+-                       "histories": histories, "query_texts": query_texts}
++                       "histories": histories, "query_texts": query_texts,
++                       "category_profiles": category_profiles}
+     return world
+ 
+ 
+@@ -51,4 +58,6 @@ def sample_news_users(world, rng, U: int):
+         if "histories" in pool else None
+     world.sampled_query_texts = [pool["query_texts"][i] for i in idx] \
+         if "query_texts" in pool else None
++    world.sampled_category_profiles = pool["category_profiles"][idx] \
++        if "category_profiles" in pool else None
+     return pool["profiles"][idx], pool["seen"][idx]
+diff --git a/src/sim/params.py b/src/sim/params.py
+index 38bb2bc..df39243 100644
+--- a/src/sim/params.py
++++ b/src/sim/params.py
+@@ -28,6 +28,7 @@ class Params:
+     # inside the simulation. True = "returning user": recommenders also see each
+     # reader's real MIND history (profile vector and past-click text).
+     reader_history_visible: bool = False
++    boredom_threshold: float = 0.25  # coarse self-report: penalty exceeds this threshold
+ 
+     # ---- News-only options -----------------------------------------------
+     common_from_popularity: bool = False  # shift V's mean by real popularity
+@@ -36,6 +37,10 @@ class Params:
+         if self.sigma_i is None:
+             self.sigma_i = self.sigma
+         assert self.info in ("none", "rec", "oracle"), self.info
++        if not isinstance(self.reader_history_visible, bool):
++            raise ValueError("reader_history_visible must be boolean")
++        if not 0 <= self.boredom_threshold < float("inf"):
++            raise ValueError("boredom_threshold must be finite and nonnegative")
+ 
+     def as_dict(self) -> dict:
+         return asdict(self)
+diff --git a/src/sim/recommender_config.py b/src/sim/recommender_config.py
+index 3e610df..5f0a3e8 100644
+--- a/src/sim/recommender_config.py
++++ b/src/sim/recommender_config.py
+@@ -7,9 +7,15 @@ from .recommenders import REGISTRY
+ def recommender_options(name, settings, **overrides):
+     allowed = set(signature(REGISTRY[name].__init__).parameters) - {"self"}
+     options = {key: value for key, value in settings.items() if key in allowed}
++    parent = {"fatigue_mf": "mf", "fatigue_content": "content",
++              "fatigue_popularity": "popularity"}.get(name)
++    inherited = settings.get(parent, {}) if parent else {}
+     specific = settings.get(name, {})
++    if not isinstance(inherited, dict):
++        raise ValueError(f"recommenders.{parent} must be a mapping")
+     if not isinstance(specific, dict):
+         raise ValueError(f"recommenders.{name} must be a mapping")
++    specific = {**inherited, **specific}
+     unknown = (set(specific) | set(overrides)) - allowed
+     if unknown:
+         raise ValueError(f"Unknown settings for {name}: {sorted(unknown)}")
+diff --git a/src/sim/recommenders.py b/src/sim/recommenders.py
+index 128e0bc..afa7368 100644
+--- a/src/sim/recommenders.py
++++ b/src/sim/recommenders.py
+@@ -7,8 +7,9 @@ slate of K items per user, and the user picks the best item in the slate
+ according to their own beliefs.
+ 
+ To add a recommender, subclass Recommender and implement `recommend`
+-(and `observe` if it learns from feedback). Everything the recommender is
+-allowed to see is in SimState: it never sees users' true values.
++(and `observe` if it learns from feedback). Ordinary recommenders only use
++observable SimState inputs. The ideal reference receives privileged values
++through a separate setter, never through the shared state.
+ """
+ from dataclasses import dataclass, field
+ from collections import Counter
+@@ -494,7 +495,325 @@ class MatrixFactorizationRecommender(PopularityRecommender):
+             setattr(self, name, float(array) if name == "global_mean" else array)
+ 
+ 
++def _bounded_weight(value, name):
++    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real) \
++            or not np.isfinite(value) or not 0 <= value <= 1:
++        raise ValueError(f"{name} must be finite and in [0, 1]")
++    return value
++
++
++def _category_info(world, required=True):
++    if world.cats is None:
++        if required and world.N:
++            raise ValueError("This recommender requires world.cats with shape [N]")
++        return np.empty(0, dtype=int), np.full(world.N, -1, dtype=int)
++    cats = np.asarray(world.cats)
++    if cats.shape != (world.N,) or any(value is None or
++            isinstance(value, (float, np.floating)) and not np.isfinite(value) for value in cats):
++        raise ValueError("world.cats must contain one nonmissing category per article")
++    return np.unique(cats, return_inverse=True)
++
++
++class IdealRecommender(Recommender):
++    """Privileged reference ranking by true gross utility, supplied separately.
++
++    This does not guarantee the highest realized net welfare: readers still
++    choose within the returned slate and can experience fatigue.
++    """
++    name = "ideal"
++    reference_only = True
++
++    def __init__(self, K: int = 10, reference_only: bool = True):
++        super().__init__(K)
++        if reference_only is not True:
++            raise ValueError("ideal is a privileged reference_only recommender")
++        self.reference_only = reference_only
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self._reference_values = None
++
++    def set_reference_values(self, values):
++        values = np.asarray(values, dtype=float)
++        if values.shape != (self.U, self.world.N) or not np.isfinite(values).all():
++            raise ValueError("Reference values must be finite with shape [U, N]")
++        self._reference_values = values.copy()
++
++    def recommend(self, state):
++        if self._reference_values is None:
++            raise ValueError("ideal requires set_reference_values() after reset")
++        return self.top_k(self._reference_values, self.eligible(state))
++
++    def model_state(self):
++        return {} if self._reference_values is None \
++            else {"reference_values": self._reference_values.copy()}
++
++    def restore_model_state(self, values):
++        if not values:
++            self._reference_values = None
++        elif set(values) == {"reference_values"}:
++            self.set_reference_values(values["reference_values"])
++        else:
++            raise ValueError("ideal state only accepts reference_values")
++
++
++class CalibratedRecommender(ContentBasedRecommender):
++    """Greedy relevance and calibration to an observable category distribution.
++
++    The target combines visible `extra['category_profiles']` raw counts and
++    simulated reads. With no counts it uses the catalogue's category mix.
++    Candidate score is (1-w)*relevance - w*KL(target || .99*slate_mix+.01*target).
++    Within each category, only the most relevant remaining candidate needs to
++    be considered because its calibration term is shared by that category.
++    """
++    name = "calibrated"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0,
++                 profile_weight: float = 1.0, calibration_weight: float = 0.5):
++        super().__init__(K, prior_weight, profile_weight)
++        self.calibration_weight = _bounded_weight(calibration_weight, "calibration_weight")
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self.category_labels, self.article_categories = _category_info(
++            world, required=self.calibration_weight > 0)
++
++    def target_distribution(self, state):
++        C = len(self.category_labels)
++        counts = np.zeros((self.U, C))
++        profiles = state.extra.get("category_profiles")
++        if profiles is not None:
++            profiles = np.asarray(profiles, dtype=float)
++            if profiles.shape != (self.U, C) or not np.isfinite(profiles).all() \
++                    or (profiles < 0).any():
++                raise ValueError("category_profiles must be finite nonnegative counts with shape [U, C]")
++            counts += profiles
++        if len(state.history) != self.U:
++            raise ValueError("history must contain one list per user")
++        for user, history in enumerate(state.history):
++            if not len(history):
++                continue
++            idx = np.asarray(history)
++            if idx.ndim != 1 or not np.issubdtype(idx.dtype, np.integer) \
++                    or (idx < 0).any() or (idx >= self.world.N).any():
++                raise ValueError("history must contain catalogue indices in [0, N)")
++            if C:
++                counts[user] += np.bincount(self.article_categories[idx], minlength=C)
++        totals = counts.sum(axis=1, keepdims=True)
++        target = counts / np.where(totals > 0, totals, 1)
++        if C:
++            catalogue = np.bincount(self.article_categories, minlength=C).astype(float)
++            target[totals[:, 0] == 0] = catalogue / catalogue.sum()
++        return target
++
++    def recommend(self, state):
++        if self.calibration_weight == 0:
++            return super().recommend(state)
++        available = self.eligible(state)
++        relevance = self.relevance(state)
++        target = self.target_distribution(state)
++        out = self.top_k(relevance, available)
++        C = len(self.category_labels)
++        for user in np.flatnonzero(available.sum(axis=1) > self.K):
++            order = np.argsort(-relevance[user], kind="stable") \
++                if self.calibration_weight < 1 else np.arange(self.world.N)
++            order = order[available[user, order]]
++            groups = [order[self.article_categories[order] == category] for category in range(C)]
++            pointers = np.zeros(C, dtype=int)
++            selected = np.zeros(C)
++            positive = target[user] > 0
++            for k in range(self.K):
++                best_item, best_category, best_score = None, None, -np.inf
++                for category, candidates in enumerate(groups):
++                    if pointers[category] == len(candidates):
++                        continue
++                    item = int(candidates[pointers[category]])
++                    mix = selected.copy()
++                    mix[category] += 1
++                    mix /= k + 1
++                    smoothed = .99 * mix + .01 * target[user]
++                    kl = np.sum(target[user, positive] *
++                                np.log(target[user, positive] / smoothed[positive]))
++                    score = (1 - self.calibration_weight) * relevance[user, item] \
++                        - self.calibration_weight * kl
++                    if score > best_score or score == best_score \
++                            and (best_item is None or item < best_item):
++                        best_item, best_category, best_score = item, category, score
++                if best_item is None:
++                    break
++                out[user, k] = best_item
++                selected[best_category] += 1
++                pointers[best_category] += 1
++        return out
++
++
++class _ObservableFatigueSignals:
++    """Shared validation and storage for opted-in observable feedback only."""
++    accepts_feedback_signals = True
++
++    def _reset_signals(self):
++        self.departed_users = np.zeros(self.U, dtype=bool)
++
++    def _feedback_inputs(self, users, items, feedback, signals):
++        users, items = np.asarray(users), np.asarray(items)
++        try:
++            if np.iscomplexobj(feedback):
++                raise ValueError("Feedback utilities must be real")
++            feedback = np.asarray(feedback, dtype=float)
++        except (TypeError, ValueError) as error:
++            raise ValueError("feedback must contain finite real utilities") from error
++        if users.ndim != 1 or items.ndim != 1 or feedback.ndim != 1 \
++                or users.shape != items.shape or users.shape != feedback.shape \
++                or not np.isfinite(feedback).all():
++            raise ValueError("Feedback arrays must be aligned, one-dimensional and finite")
++        if users.size and (not np.issubdtype(users.dtype, np.integer)
++                          or not np.issubdtype(items.dtype, np.integer)
++                          or (users < 0).any() or (users >= self.U).any()
++                          or (items < 0).any() or (items >= self.world.N).any()):
++            raise ValueError("Feedback users/items must be valid integer indices")
++        if signals is None:
++            signals = {}
++        if not isinstance(signals, dict) or set(signals) - {"boredom", "left_users"}:
++            raise ValueError("signals only accepts boredom and left_users")
++        boredom = np.asarray(signals.get("boredom", np.zeros(users.size)), dtype=float)
++        if boredom.shape != users.shape or not np.isfinite(boredom).all() \
++                or not np.isin(boredom, [0, 1]).all():
++            raise ValueError("boredom must be aligned binary observations")
++        left = np.asarray(signals.get("left_users", []))
++        if left.ndim != 1 or left.size and (not np.issubdtype(left.dtype, np.integer)
++                or (left < 0).any() or (left >= self.U).any()):
++            raise ValueError("left_users must contain valid user indices")
++        return users.astype(int), items.astype(int), feedback, boredom, left.astype(int)
++
++    def model_state(self):
++        values = super().model_state()
++        values["departed_users"] = self.departed_users.copy()
++        return values
++
++    def restore_model_state(self, values):
++        values = dict(values)
++        departed = np.asarray(values.pop("departed_users", None))
++        if departed.shape != (self.U,) or departed.dtype != bool:
++            raise ValueError("departed_users must be a boolean array with shape [U]")
++        super().restore_model_state(values)
++        self.departed_users = departed.copy()
++
++
++class FatiguePopularityRecommender(_ObservableFatigueSignals, PopularityRecommender):
++    """Downweight read counts when a consumed article produces reported boredom."""
++    name = "fatigue_popularity"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0, fatigue_weight: float = 1.0):
++        super().__init__(K, prior_weight)
++        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self._reset_signals()
++
++    def observe(self, state, users, items, feedback, signals=None):
++        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
++        np.add.at(self.counts, items, 1 - self.fatigue_weight * boredom)
++        self.departed_users[left] = True
++
++
++class FatigueMFRecommender(_ObservableFatigueSignals, MatrixFactorizationRecommender):
++    """Fit net utility minus a coarse reported-boredom penalty using observed reads."""
++    name = "fatigue_mf"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0, factors: int = 8,
++                 regularization: float = 1.0, iterations: int = 3,
++                 fatigue_weight: float = 1.0):
++        super().__init__(K, prior_weight, factors, regularization, iterations)
++        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self._reset_signals()
++
++    def observe(self, state, users, items, feedback, signals=None):
++        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
++        adjusted = feedback - self.fatigue_weight * boredom
++        for user, item, rating in zip(users, items, adjusted):
++            self.observed_ratings[user, item] = rating
++        np.add.at(self.counts, items, 1 - self.fatigue_weight * boredom)
++        if users.size:
++            self._fit()
++        self.departed_users[left] = True
++
++
++class FatigueContentRecommender(_ObservableFatigueSignals, ContentBasedRecommender):
++    """Penalize recently consumed categories using only observable reading/boredom.
++
++    Per-category recent counts decay once per elapsed round. A read adds
++    1+boredom to its category. Relevance subtracts fatigue_weight times recent
++    category load / (1 + total load), so empty-round decay also reduces penalties.
++    The ordinary content profile/history calculation is retained.
++    """
++    name = "fatigue_content"
++
++    def __init__(self, K: int = 10, prior_weight: float = 1.0,
++                 profile_weight: float = 1.0, fatigue_weight: float = 1.0,
++                 decay: float = 0.8):
++        super().__init__(K, prior_weight, profile_weight)
++        self.fatigue_weight = _bounded_weight(fatigue_weight, "fatigue_weight")
++        self.decay = _bounded_weight(decay, "decay")
++
++    def reset(self, world, U, rng):
++        super().reset(world, U, rng)
++        self._reset_signals()
++        self.category_labels, self.article_categories = _category_info(
++            world, required=self.fatigue_weight > 0)
++        self.recent_category_counts = np.zeros((U, len(self.category_labels)))
++        self.last_round = -1
++
++    def _advance(self, t):
++        if isinstance(t, (bool, np.bool_)) or not isinstance(t, (int, np.integer)) \
++                or t < 0 or t < self.last_round:
++            raise ValueError("state.t must be a nonnegative nondecreasing integer")
++        if t > self.last_round:
++            self.recent_category_counts *= self.decay ** (t - self.last_round)
++            self.last_round = int(t)
++
++    def relevance(self, state):
++        base = super().relevance(state)
++        self._advance(state.t)
++        if self.fatigue_weight == 0 or not len(self.category_labels):
++            return base
++        normalized = self.recent_category_counts / (1 + self.recent_category_counts.sum(axis=1, keepdims=True))
++        return base - self.fatigue_weight * normalized[:, self.article_categories]
++
++    def observe(self, state, users, items, feedback, signals=None):
++        users, items, feedback, boredom, left = self._feedback_inputs(users, items, feedback, signals)
++        self._advance(state.t)
++        np.add.at(self.counts, items, 1.0)
++        if len(self.category_labels):
++            np.add.at(self.recent_category_counts, (users, self.article_categories[items]), 1 + boredom)
++        self.departed_users[left] = True
++
++    def model_state(self):
++        values = super().model_state()
++        values.update(recent_category_counts=self.recent_category_counts.copy(),
++                      last_round=np.asarray(self.last_round))
++        return values
++
++    def restore_model_state(self, values):
++        values = dict(values)
++        recent = np.asarray(values.pop("recent_category_counts", None), dtype=float)
++        last = np.asarray(values.pop("last_round", None))
++        if recent.shape != (self.U, len(self.category_labels)) or not np.isfinite(recent).all() \
++                or (recent < 0).any() or last.shape != () \
++                or not np.issubdtype(last.dtype, np.integer) or last < -1:
++            raise ValueError("Invalid recent category counts or last_round in fatigue content state")
++        super().restore_model_state(values)
++        self.recent_category_counts = recent.copy()
++        self.last_round = int(last)
++
++
+ REGISTRY = {"none": NoRecommender, "random": RandomRecommender,
+             "popularity": PopularityRecommender, "content": ContentBasedRecommender,
+             "mmr": MMRRecommender, "bm25": BM25Recommender,
+-            "mf": MatrixFactorizationRecommender}
++            "mf": MatrixFactorizationRecommender, "ideal": IdealRecommender,
++            "calibrated": CalibratedRecommender,
++            "fatigue_popularity": FatiguePopularityRecommender,
++            "fatigue_mf": FatigueMFRecommender, "fatigue_content": FatigueContentRecommender}
+diff --git a/src/sim/reporting.py b/src/sim/reporting.py
+index f67fd66..7f988c4 100644
+--- a/src/sim/reporting.py
++++ b/src/sim/reporting.py
+@@ -42,6 +42,11 @@ METRIC_DEFINITIONS = {
+     "exposure_events": "Number of article positions in explicitly returned slates; NaN for none baseline.",
+     "step_distance": "Per-round mean world distance between consecutive reads, where both exist.",
+     "active_share": "Fraction not explicitly dropped out after each round; exhaustion does not imply dropout.",
++    "reported_boredom_rate": "Mean observed coarse boredom flag across reported read events; not latent fatigue or inferred dissatisfaction.",
++    "reported_departures": "Total recorded explicit reader-departure signals; missing when no signals were archived.",
++    "departures": "Number of explicit departure signals in a round.",
++    "recommendation_seconds": "Measured recommendation-call duration for a round, excluding archive writes and reader simulation.",
++    "total_recommendation_seconds": "Sum of measured recommendation-call durations across rounds.",
+     "ci95": "Normal approximation: 1.96 * sample standard deviation / sqrt(population count), independently per condition; NaN for n < 2.",
+     "limitations": "Article overlap is a homogenization proxy, not ideological agreement. No CTR or click model is inferred. Synthetic data are engineering checks, not MIND findings.",
+ }
+@@ -176,10 +181,11 @@ def _metadata(directory):
+     settings = meta.get("recommender_settings", {})
+     row = {k: v for k, v in params.items() if v is None or isinstance(v, (str, bool, int, float))}
+     row.update({k: v for k, v in settings.items() if v is None or isinstance(v, (str, bool, int, float))})
+-    for key in ("rho", "phi", "info", "diversity_weight", "data_kind"):
++    for key in ("rho", "phi", "info", "diversity_weight", "data_kind", "requested_K", "reference_only"):
+         if key in meta:
+             row[key] = meta[key]
+     row["recommender"] = meta.get("recommender", meta.get("algorithm", "unknown"))
++    row["algorithm"] = meta.get("algorithm", row["recommender"])
+     row["population"] = meta.get("population", meta.get("pop", directory.name))
+     row["seed"] = meta.get("seed")
+     row["archive"] = str(directory)
+@@ -216,6 +222,142 @@ def _read_slates(directory, T):
+     return slates
+ 
+ 
++def _observed_metrics(directory, curves, metrics):
++    """Add only recorded feedback signals and measured call times."""
++    flags, departures, times = [], [], []
++    for t in curves["t"]:
++        path = directory / "rounds" / f"round_{t:04d}_output.npz"
++        if not path.exists():
++            flags.append(None); departures.append(np.nan); times.append(np.nan)
++            continue
++        with np.load(path, allow_pickle=False) as saved:
++            boredom = saved["feedback_boredom"].copy() if "feedback_boredom" in saved else None
++            if boredom is not None and (boredom.ndim != 1 or not np.isfinite(boredom).all()
++                                         or (boredom < 0).any() or (boredom > 1).any()):
++                raise ValueError("Saved boredom signals must be finite values in [0, 1]")
++            flags.append(boredom)
++            departures.append(len(saved["feedback_left_users"]) if "feedback_left_users" in saved else np.nan)
++            times.append(float(saved["diagnostic_recommendation_seconds"])
++                         if "diagnostic_recommendation_seconds" in saved else np.nan)
++    curves["reported_boredom_rate"] = [_mean(f) if f is not None else np.nan for f in flags]
++    curves["departures"] = departures
++    curves["recommendation_seconds"] = times
++    reported = [f for f in flags if f is not None]
++    metrics["reported_boredom_rate"] = _mean(np.concatenate(reported)) if reported else np.nan
++    metrics["reported_departures"] = float(np.nansum(departures)) if np.isfinite(departures).any() else np.nan
++    metrics["total_recommendation_seconds"] = float(np.nansum(times)) if np.isfinite(times).any() else np.nan
++
++
++def _constructor_columns():
++    from inspect import signature
++    from .recommenders import REGISTRY
++    return {name for rec in REGISTRY.values() for name in signature(rec.__init__).parameters if name != "self"}
++
++
++def paired_comparisons(frame, condition_columns, metric_columns, model_columns=None):
++    """Return exact matched-population differences, preserving model controls.
++
++    Only the named contrast changes. Missing population IDs/seeds are never
++    matched. A nonunique baseline is rejected instead of being averaged.
++    """
++    model_columns = set(model_columns or _constructor_columns())
++    identity = {"recommender", "algorithm", "reference_only"}
++    conditions = [c for c in condition_columns if c in frame]
++    measurements = [m for m in metric_columns if m in frame]
++    required = ["seed", "population"]
++    if not all(c in frame for c in required):
++        usable = frame.iloc[:0]
++    else:
++        usable = frame[frame[required].notna().all(axis=1)]
++    algorithm = usable.get("algorithm", usable.get("recommender", pd.Series(dtype=str)))
++    outputs = {}
++
++    def match(left, right, keys, comparison):
++        keys = list(dict.fromkeys([c for c in keys + required if c in frame]))
++        schema = list(dict.fromkeys(["comparison", "left_recommender", "right_recommender"]
++                                   + conditions + required + ["left_archive", "right_archive"]
++                                   + [m + suffix for m in measurements for suffix in ("_left", "_right", "_difference")]))
++        if left.empty or right.empty:
++            result = pd.DataFrame(columns=schema)
++        else:
++            if right.duplicated(keys).any():
++                raise ValueError(f"Ambiguous matched baseline for {comparison}; model settings or population controls differ")
++            merged = left.merge(right, on=keys, suffixes=("_left", "_right"), validate="many_to_one")
++            result = pd.DataFrame(index=merged.index)
++            result["comparison"] = comparison
++            result["left_recommender"] = merged["recommender"] if "recommender" in keys else merged["recommender_left"]
++            result["right_recommender"] = merged["recommender"] if "recommender" in keys else merged["recommender_right"]
++            for c in conditions + required:
++                result[c] = merged[c] if c in keys else merged[c + "_left"]
++            for side in ("left", "right"):
++                result[side + "_archive"] = merged.get("archive_" + side, pd.Series(index=merged.index, dtype=str))
++            for metric in measurements:
++                result[metric + "_left"] = merged[metric + "_left"]
++                result[metric + "_right"] = merged[metric + "_right"]
++                result[metric + "_difference"] = pd.to_numeric(merged[metric + "_left"], errors="coerce") \
++                    - pd.to_numeric(merged[metric + "_right"], errors="coerce")
++            result = result.reindex(columns=schema)
++        result.attrs["candidate_left_rows"] = len(left)
++        result.attrs["matched_rows"] = len(result)
++        result.attrs["unmatched_left_rows"] = len(left) - len(result)
++        return result
++
++    if "reader_history_visible" in usable:
++        history_left = usable[usable["reader_history_visible"].eq(True)]
++        history_right = usable[usable["reader_history_visible"].eq(False)]
++    else:
++        history_left = history_right = usable.iloc[:0]
++    outputs["paired_history_visibility"] = match(history_left, history_right,
++        [c for c in conditions if c != "reader_history_visible"], "returning_minus_new")
++    aware_outputs = []
++    coverage = {"candidate_left_rows": 0, "matched_rows": 0, "unmatched_left_rows": 0}
++    for aware, blind in (("fatigue_popularity", "popularity"), ("fatigue_content", "content"), ("fatigue_mf", "mf")):
++        left, right = usable[algorithm.eq(aware)], usable[algorithm.eq(blind)]
++        shared = [c for c in model_columns if c in frame and left[c].notna().any() and right[c].notna().any()]
++        controls = [c for c in conditions if c not in identity | model_columns] + shared
++        paired = match(left, right, controls, "fatigue_aware_minus_blind")
++        for key in coverage:
++            coverage[key] += paired.attrs[key]
++        aware_outputs.append(paired)
++    populated = [table for table in aware_outputs if len(table)]
++    outputs["paired_fatigue_feedback"] = pd.concat(populated, ignore_index=True) \
++        if populated else aware_outputs[0].copy()
++    outputs["paired_fatigue_feedback"].attrs.update(coverage)
++    baseline = usable[algorithm.eq("none")]
++    methods = usable[~algorithm.eq("none")]
++    # Baseline has no personalized model, so only common constructor controls
++    # (normally K) can be matched; every left model configuration remains a row.
++    shared = [c for c in model_columns if c in frame and methods[c].notna().any() and baseline[c].notna().any()
++              and c != "reference_only"]
++    controls = [c for c in conditions if c not in identity | model_columns] + shared
++    outputs["paired_vs_none"] = match(methods, baseline, controls, "method_minus_none")
++    return outputs
++
++
++def _save_paired_tables(frame, condition_columns, metric_columns, output, model_columns):
++    paired = paired_comparisons(frame, condition_columns, metric_columns, model_columns)
++    coverage = []
++    for name, table in paired.items():
++        table.to_csv(output / f"{name}.csv", index=False)
++        coverage.append({"comparison": name, **table.attrs})
++        differences = [c for c in table if c.endswith("_difference")]
++        controls = [c for c in ["comparison", "left_recommender", "right_recommender"] + condition_columns if c in table]
++        if len(table):
++            summary = _summarize(table, list(dict.fromkeys(controls)), differences)
++            summary = summary.rename(columns={"n_populations": "n_pairs"})
++        else:
++            summary = pd.DataFrame(columns=list(dict.fromkeys(controls)) + ["n_pairs"] + differences)
++        summary.to_csv(output / f"{name}_summary.csv", index=False)
++    pd.DataFrame(coverage).to_csv(output / "paired_comparison_coverage.csv", index=False)
++    (output / "paired_comparison_definitions.json").write_text(json.dumps({
++        "direction": "Each difference is left minus right for the same saved seed and population.",
++        "history": "Returning-reader visibility minus new-reader visibility; all other simulator/model controls match.",
++        "fatigue_feedback": "Fatigue-aware algorithm minus its blind counterpart; shared model settings match and aware-only knobs remain labeled.",
++        "vs_none": "Each exact method/configuration minus full-catalogue browsing at matching simulator controls and slate-size request.",
++        "limits": "Descriptive matched simulation comparisons. Unmatched rows are counted in paired_comparison_coverage.csv; reference_only rows remain explicitly flagged."
++    }, indent=2) + "\n")
++
++
+ def _summarize(frame, group_columns, value_columns):
+     rows = []
+     for keys, group in frame.groupby(group_columns, dropna=False, sort=False):
+@@ -233,7 +375,15 @@ def _summarize(frame, group_columns, value_columns):
+     return pd.DataFrame(rows)
+ 
+ 
+-def _figures(summary, curve_summary, output):
++def _figures(summary, curve_summary, output, condition_columns=None, model_columns=None):
++    if len(summary) > 24:
++        from .study_figures import study_figures
++        if condition_columns is None:
++            condition_columns = [c for c in summary if c not in METRIC_DEFINITIONS
++                                 and c not in ("condition_id", "n_populations")
++                                 and not c.endswith(("_ci95", "_n"))]
++        return study_figures(summary, output, condition_columns,
++                             _constructor_columns() if model_columns is None else model_columns)
+     import matplotlib
+     matplotlib.use("Agg")
+     import matplotlib.pyplot as plt
+@@ -365,15 +515,20 @@ def rebuild_report(run_dir):
+         raise ValueError(f"No saved population runs under {root / 'populations'}")
+     populations, users, curves, skipped = [], [], [], []
+     metadata_columns = set()
++    model_columns = set()
+     for run_path in paths:
+         directory = run_path.parent
+         meta = _metadata(directory)
+         metadata_columns.update(meta)
++        document = json.loads((directory / "metadata.json").read_text())
++        model_columns.update(k for k, v in document.get("recommender_settings", {}).items()
++                             if v is None or isinstance(v, (str, bool, int, float)))
+         world = load_world(directory)
+         with np.load(run_path, allow_pickle=False) as stored:
+             run = {k: stored[k].copy() for k in stored.files}
+         slate_data = _read_slates(directory, run["seq"].shape[1])
+         user, metrics, curve = population_report(world, run, slate_data)
++        _observed_metrics(directory, curve, metrics)
+         populations.append({**meta, **metrics})
+         for key, value in meta.items():
+             user[key] = value
+@@ -402,10 +557,12 @@ def rebuild_report(run_dir):
+                         ("curves_summary", curve_summary),
+                         ("conditions", summary[["condition_id"] + group_columns])):
+         frame.to_csv(output / f"{name}.csv", index=False)
++    _save_paired_tables(population_frame, group_columns, metric_columns, output, model_columns)
+     (output / "metrics_definitions.json").write_text(json.dumps(METRIC_DEFINITIONS, indent=2) + "\n")
+     (output / "sources.json").write_text(json.dumps({"population_archives": population_frame["archive"].tolist(),
+         "skipped_incomplete_archives": skipped, "simulator_rerun": False}, indent=2) + "\n")
+-    columns = [c for c in ("condition_id", "recommender", "rho", "phi", "diversity_weight",
++    columns = [c for c in ("condition_id", "recommender", "requested_K", "K", "reader_history_visible",
++                            "reference_only", "rho", "phi", "diversity_weight",
+                             "data_kind", "n_populations", "cat_entropy", "diversity", "homogeneity",
+                             "fatigue", "welfare_net", "catalog_coverage", "slate_ild") if c in summary]
+     lines = ["# Saved experiment comparison", "", "Rebuilt from saved arrays. No simulator was rerun.", "",
+@@ -430,6 +587,6 @@ def rebuild_report(run_dir):
+     lines += ["", "Full numeric results, effective sample counts, and CI widths are in summary.csv.",
+               "Plots use summary.csv and curves_summary.csv. Regenerate these outputs from the same archives when presentation needs change.", ""]
+     (output / "summary.md").write_text("\n".join(lines))
+-    _figures(summary, curve_summary, output / "figures")
++    _figures(summary, curve_summary, output / "figures", group_columns, model_columns)
+     return {"output": str(output), "populations": len(population_frame),
+             "conditions": len(summary), "summary": summary}
+diff --git a/src/sim/run_bundle.py b/src/sim/run_bundle.py
+index 34de917..b1eb618 100644
+--- a/src/sim/run_bundle.py
++++ b/src/sim/run_bundle.py
+@@ -114,7 +114,7 @@ class RunBundle:
+             (self.path / name).write_text(result.stdout + result.stderr)
+         source = self.path / "source"
+         source.mkdir()
+-        for folder in ("src", "scripts", "tests", "docs"):
++        for folder in ("src", "scripts", "tests", "docs", "configs"):
+             for original in sorted((repo / folder).rglob("*")):
+                 if original.is_file() and "__pycache__" not in original.parts \
+                         and original.suffix in (".py", ".md", ".yaml", ".json"):
+diff --git a/src/sim/simulate.py b/src/sim/simulate.py
+index 77aded0..2b59249 100644
+--- a/src/sim/simulate.py
++++ b/src/sim/simulate.py
+@@ -21,7 +21,7 @@ import numpy as np
+ from time import perf_counter
+ 
+ from .params import Params
+-from .recommenders import NoRecommender, Recommender, SimState
++from .recommenders import IdealRecommender, NoRecommender, Recommender, SimState
+ from .users import Beliefs, Population
+ from .world import World
+ 
+@@ -44,11 +44,14 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                    recommender: Recommender | None = None,
+                    profiles: np.ndarray | None = None,
+                    seen: np.ndarray | None = None,
+-                   recorder=None, query_texts=None) -> dict:
++                   recorder=None, query_texts=None, category_profiles=None) -> dict:
+     pop = Population(world, p, U, rng, profiles=profiles, seen=seen)
+     bel = Beliefs(world, pop, p)
+     rec = recommender or NoRecommender()
+     rec.reset(world, U, rng)
++    # Privileged reference only: ordinary state objects never contain X or V.
++    if type(rec) is IdealRecommender:
++        rec.set_reference_values(pop.X)
+ 
+     N, T = world.N, p.T
+     Kf = fatigue_kernel(world, p.fatigue_rho) if p.phi > 0 else None
+@@ -64,8 +67,9 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+     left_at = np.full(U, T)                  # round at which the user left
+ 
+     if recorder is not None:
+-        recorder.start(world, p, rec, rng, profiles, consumed,
+-                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar})
++        recorder.start(world, p, rec, rng, profiles if p.reader_history_visible else None, consumed,
++                       {"X": pop.X, "V": pop.V, "prior_means": pop.vbar,
++                        "latent_profiles": profiles})
+ 
+     for t in range(T):
+         # Readers' real MIND history reaches recommenders only in the
+@@ -76,6 +80,8 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+                 extra["profiles"] = profiles
+             if query_texts is not None:
+                 extra["query_texts"] = query_texts
++            if category_profiles is not None:
++                extra["category_profiles"] = category_profiles
+         state = SimState(world, t, ~consumed, history, ratings, active.copy(),
+                          extra=extra)
+         if recorder is not None:
+@@ -97,7 +103,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+             allowed &= mask
+         score = np.where(allowed, score, -np.inf)
+ 
+-        users, items, fb = [], [], []
++        users, items, fb, bored, left_users = [], [], [], [], []
+         for i in np.flatnonzero(active):
+             n = int(np.argmax(score[i]))
+             if not np.isfinite(score[i, n]):
+@@ -105,6 +111,7 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+             if p.outside_option is not None and score[i, n] < p.outside_option:
+                 active[i] = False
+                 left_at[i] = t
++                left_users.append(i)
+                 continue
+             penalty = p.phi * F[i, n]
+             seq[i, t], val[i, t], pen[i, t] = n, pop.X[i, n], penalty
+@@ -113,20 +120,29 @@ def run_population(world: World, p: Params, U: int, rng: np.random.Generator,
+             ratings[i, n] = pop.X[i, n] - penalty
+             bel.observe(i, n)                # learning spillovers
+             users.append(i); items.append(n); fb.append(ratings[i, n])
++            # Observable coarse self-report; raw latent fatigue is not exposed.
++            bored.append(float(penalty > p.boredom_threshold))
+ 
+         if Kf is not None:                   # fatigue decays, then builds up
+             F *= p.fatigue_decay
+             if users:
+                 F[users] += Kf[items]
+-        if users:
+-            rec.observe(state, np.array(users), np.array(items), np.array(fb))
++        user_array, item_array = np.array(users, dtype=int), np.array(items, dtype=int)
++        feedback_array = np.array(fb, dtype=float)
++        signals = {"boredom": np.array(bored, dtype=float),
++                   "left_users": np.array(left_users, dtype=int)}
++        if getattr(rec, "accepts_feedback_signals", False):
++            rec.observe(state, user_array, item_array, feedback_array, signals=signals)
++        elif users:
++            rec.observe(state, user_array, item_array, feedback_array)
+         if recorder is not None:
+             recorder.after_round(t, slates, np.array(users, dtype=int),
+                                  np.array(items, dtype=int), np.array(fb, dtype=float), rec,
+                                  {"choice_scores": score, "active_after": active,
+                                   "fatigue_after": F, "belief_mean_after": bel.mean,
+                                   "belief_variance_after": bel.var,
+-                                  "recommendation_seconds": recommendation_seconds})
++                                  "recommendation_seconds": recommendation_seconds},
++                                 signals=signals)
+ 
+     run = {"seq": seq, "val": val, "pen": pen, "left_at": left_at,
+            "X": pop.X, "V": pop.V}
+diff --git a/tests/test_artifacts.py b/tests/test_artifacts.py
+index ec2f218..af5690d 100644
+--- a/tests/test_artifacts.py
++++ b/tests/test_artifacts.py
+@@ -38,6 +38,8 @@ def test_checkpoint_reproduces_recommendations_and_learning(tmp_path, name):
+     state = state_fixture(world)
+     rec = REGISTRY[name](K=3)
+     rec.reset(world, 2, np.random.default_rng(42))
++    if getattr(rec, "reference_only", False):
++        rec.set_reference_values(np.arange(8).reshape(2, 4))
+     rec.observe(state, np.array([0, 1]), np.array([2, 2]), np.array([-1., 2.]))
+     path = tmp_path / "model.npz"
+     save_checkpoint(rec, path)

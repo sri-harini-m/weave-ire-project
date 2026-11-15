@@ -1,0 +1,40 @@
+{
+  "data_kind": "synthetic engineering validation; not MIND research findings",
+  "bundle": "results/report_validation/20261024T114856280981Z_45df7ccf",
+  "pytest": {
+    "exit_code": 0,
+    "passed": 100,
+    "warnings": 1,
+    "warning_kind": "Pandas4Warning: DataFrame.join rsuffix deprecation in experiment.py:142",
+    "plot_layout_warnings": 0,
+    "log": "results/report_validation/final_tests.log"
+  },
+  "offline_rebuild": {
+    "exit_code": 0,
+    "simulation_rerun": false,
+    "seconds": 4.699326625006506,
+    "warnings": 0,
+    "log": "results/report_validation/final_rebuild.log"
+  },
+  "raw_population_files": 2310,
+  "raw_checksums_unchanged": true,
+  "report_csv_checksums_unchanged": true,
+  "manifest": {
+    "entries": 2410,
+    "errors": [],
+    "unlisted": []
+  },
+  "files": 2411,
+  "population_runs": 42,
+  "conditions": 14,
+  "metrics_with_ci95": 27,
+  "figure_png": 17,
+  "figure_svg": 17,
+  "model_snapshots": 756,
+  "report_csv_sha256": {
+    "report/populations.csv": "c679fe68614a7775c6034a31cfeb52c21e513d90858ee26e6a4728af11a9b035",
+    "report/summary.csv": "5fc5bf8d2d1bff8a0f4fa0d30dee903c82cd2bccf6c85daf0886cce3efc5bea6",
+    "report/curves_summary.csv": "42c8b0d8e32cc26efc4d3684c12bfdfc035e5739c87ce8459bbcf6d2ec3ab1fb",
+    "report/conditions.csv": "1722011525817a1d05c484b18aab3961d2d04c92f83986075be379b71924491e"
+  }
+}

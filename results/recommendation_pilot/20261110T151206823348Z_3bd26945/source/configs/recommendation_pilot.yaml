@@ -1,0 +1,121 @@
+# Real-data pilot: fewer users/rounds/populations than full study.
+aridor:
+  N: 200
+  T: 20
+  U: 100
+  full_grid:
+    beta:
+    - 0.0
+    - 0.4
+    - 0.8
+    - 1.0
+    - 2.0
+    - 5.0
+    gamma:
+    - 0.0
+    - 0.3
+    - 0.6
+    - 1.0
+    - 5.0
+    rho:
+    - 0.0
+    - 0.1
+    - 0.3
+    - 0.5
+    - 0.7
+    - 0.9
+    sigma:
+    - 0.25
+    - 0.5
+    - 1.0
+    - 2.0
+    - 4.0
+  n_pop: 20
+  reduced_grid:
+    beta:
+    - 0.0
+    - 1.0
+    - 5.0
+    gamma:
+    - 0.0
+    - 0.3
+    - 1.0
+    - 5.0
+    rho:
+    - 0.0
+    - 0.1
+    - 0.3
+    - 0.5
+    - 0.7
+    - 0.9
+    sigma:
+    - 1.0
+  seed: 42
+  sigma_bar: 1.0
+embedding:
+  batch_size: 256
+  model: sentence-transformers/all-MiniLM-L6-v2
+experiment_controls:
+  diagnostics: false
+  mmr_weights:
+  - 0.0
+  - 0.3
+  - 0.6
+  - 0.9
+  - 1.0
+  slate_sizes:
+  - 5
+  - 10
+  - 25
+  - 50
+  - 500
+  snapshot_policy: final
+news:
+  N: 500
+  T: 6
+  U: 8
+  base:
+    beta: 1.0
+    boredom_threshold: 0.25
+    fatigue_decay: 0.8
+    fatigue_rho: 0.8
+    gamma: 1.0
+    reader_history_visible: false
+    sigma: 1.0
+    sigma_bar: 1.0
+  grid:
+    info:
+    - none
+    phi:
+    - 0.0
+    - 0.5
+    reader_history_visible:
+    - false
+    - true
+    rho:
+    - 0.5
+  n_pop: 2
+  only_clicked: true
+  pca_dims: 8
+  seed: 42
+paths:
+  processed_dir: data/processed
+  raw_dir: data/raw
+recommenders:
+  K: 10
+  bm25:
+    b: 0.75
+    k1: 1.2
+  calibration_weight: 0.5
+  diversity_weight: 0.3
+  fatigue_content:
+    decay: 0.8
+  fatigue_weight: 1.0
+  mf:
+    factors: 8
+    iterations: 3
+    regularization: 1.0
+  prior_weight: 1.0
+  profile_weight: 1.0
+users:
+  min_history: 10

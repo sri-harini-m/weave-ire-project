@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-11-10T15:08:33.620113+00:00",
+  "status": "complete",
+  "data_kind": "synthetic",
+  "arguments": {
+    "rebuild": null,
+    "out": "results/study_validation/synthetic_controls",
+    "users": 4,
+    "articles": 500,
+    "dimensions": 16,
+    "rounds": 3,
+    "n_pop": 1,
+    "workers": 2,
+    "k": null,
+    "slate_sizes": [
+      5,
+      10,
+      25,
+      50,
+      500
+    ],
+    "reader_history_visible": "both",
+    "snapshot_policy": "final",
+    "archive_diagnostics": false,
+    "outside_option": 0.0,
+    "seed": 42,
+    "rho": [
+      0.5
+    ],
+    "fatigue": [
+      0.0,
+      0.5
+    ],
+    "mmr_weights": [
+      0.0,
+      0.3,
+      0.6,
+      0.9,
+      1.0
+    ],
+    "recommenders": [
+      "none",
+      "random",
+      "popularity",
+      "content",
+      "mmr",
+      "bm25",
+      "mf",
+      "ideal",
+      "calibrated",
+      "fatigue_popularity",
+      "fatigue_mf",
+      "fatigue_content"
+    ]
+  },
+  "config": {
+    "data_kind": "synthetic",
+    "settings": {
+      "rebuild": null,
+      "out": "results/study_validation/synthetic_controls",
+      "users": 4,
+      "articles": 500,
+      "dimensions": 16,
+      "rounds": 3,
+      "n_pop": 1,
+      "workers": 2,
+      "k": null,
+      "slate_sizes": [
+        5,
+        10,
+        25,
+        50,
+        500
+      ],
+      "reader_history_visible": "both",
+      "snapshot_policy": "final",
+      "archive_diagnostics": false,
+      "outside_option": 0.0,
+      "seed": 42,
+      "rho": [
+        0.5
+      ],
+      "fatigue": [
+        0.0,
+        0.5
+      ],
+      "mmr_weights": [
+        0.0,
+        0.3,
+        0.6,
+        0.9,
+        1.0
+      ],
+      "recommenders": [
+        "none",
+        "random",
+        "popularity",
+        "content",
+        "mmr",
+        "bm25",
+        "mf",
+        "ideal",
+        "calibrated",
+        "fatigue_popularity",
+        "fatigue_mf",
+        "fatigue_content"
+      ]
+    },
+    "grid": {
+      "rho": [
+        0.5
+      ],
+      "phi": [
+        0.0,
+        0.5
+      ],
+      "info": [
+        "none"
+      ],
+      "reader_history_visible": [
+        false,
+        true
+      ]
+    }
+  },
+  "finished_utc": "2026-11-10T15:08:58.180519+00:00"
+}

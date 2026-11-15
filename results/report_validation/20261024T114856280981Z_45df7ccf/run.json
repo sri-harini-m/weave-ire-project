@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-24T11:48:56.282375+00:00",
+  "status": "complete",
+  "data_kind": "synthetic",
+  "arguments": {
+    "rebuild": null,
+    "out": "results/report_validation",
+    "users": 12,
+    "articles": 60,
+    "dimensions": 16,
+    "rounds": 8,
+    "n_pop": 3,
+    "workers": 2,
+    "k": 5,
+    "seed": 42,
+    "rho": [
+      0.5
+    ],
+    "fatigue": [
+      0.0,
+      0.5
+    ],
+    "mmr_weights": [
+      0.0,
+      0.3,
+      0.6
+    ]
+  },
+  "config": {
+    "data_kind": "synthetic",
+    "settings": {
+      "rebuild": null,
+      "out": "results/report_validation",
+      "users": 12,
+      "articles": 60,
+      "dimensions": 16,
+      "rounds": 8,
+      "n_pop": 3,
+      "workers": 2,
+      "k": 5,
+      "seed": 42,
+      "rho": [
+        0.5
+      ],
+      "fatigue": [
+        0.0,
+        0.5
+      ],
+      "mmr_weights": [
+        0.0,
+        0.3,
+        0.6
+      ]
+    },
+    "grid": {
+      "rho": [
+        0.5
+      ],
+      "phi": [
+        0.0,
+        0.5
+      ],
+      "info": [
+        "none"
+      ]
+    }
+  },
+  "finished_utc": "2026-10-24T11:49:01.564565+00:00"
+}

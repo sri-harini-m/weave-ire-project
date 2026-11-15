@@ -1,0 +1,10 @@
+........................................................................ [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+=============================== warnings summary ===============================
+tests/test_report_pipeline.py::test_news_runner_archives_real_input_contract_with_stub_store
+  /Users/bidishashaw/Documents/College/IRA/IRE_Project/weave-ire-project/src/sim/experiment.py:141: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+    out = m.join(ci, rsuffix="_ci95")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+160 passed, 1 warning in 18.12s

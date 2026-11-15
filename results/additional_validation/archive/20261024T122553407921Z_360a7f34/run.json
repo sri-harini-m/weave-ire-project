@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-24T12:25:53.409112+00:00",
+  "status": "complete",
+  "data_kind": "synthetic",
+  "arguments": {
+    "rebuild": null,
+    "out": "results/additional_validation/archive",
+    "users": 12,
+    "articles": 60,
+    "dimensions": 16,
+    "rounds": 8,
+    "n_pop": 3,
+    "workers": 2,
+    "k": 5,
+    "seed": 42,
+    "rho": [
+      0.5
+    ],
+    "fatigue": [
+      0.0,
+      0.5
+    ],
+    "mmr_weights": [
+      0.0,
+      0.3,
+      0.6
+    ],
+    "recommenders": [
+      "none",
+      "random",
+      "popularity",
+      "content",
+      "bm25",
+      "mf",
+      "mmr"
+    ]
+  },
+  "config": {
+    "data_kind": "synthetic",
+    "settings": {
+      "rebuild": null,
+      "out": "results/additional_validation/archive",
+      "users": 12,
+      "articles": 60,
+      "dimensions": 16,
+      "rounds": 8,
+      "n_pop": 3,
+      "workers": 2,
+      "k": 5,
+      "seed": 42,
+      "rho": [
+        0.5
+      ],
+      "fatigue": [
+        0.0,
+        0.5
+      ],
+      "mmr_weights": [
+        0.0,
+        0.3,
+        0.6
+      ],
+      "recommenders": [
+        "none",
+        "random",
+        "popularity",
+        "content",
+        "bm25",
+        "mf",
+        "mmr"
+      ]
+    },
+    "grid": {
+      "rho": [
+        0.5
+      ],
+      "phi": [
+        0.0,
+        0.5
+      ],
+      "info": [
+        "none"
+      ]
+    }
+  },
+  "finished_utc": "2026-10-24T12:25:59.999444+00:00"
+}
